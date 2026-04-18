@@ -380,13 +380,16 @@ def finalize_claim(req: FinalizeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrieval failed: {e}")
 
+    # RetrievalResultV2 uses different fields than Sharon's legacy API.
+    # Translate them into the frontend's existing ``FinalizeResponse`` shape
+    # so her React code works unchanged.
     papers_out = [
         PaperOut(
             pmid=p.pmid,
             title=p.title,
             abstract=p.abstract,
             journal=p.journal,
-            pub_year=p.pub_year,
+            pub_year=p.year,                # renamed field on RetrievedPaper
             pub_types=p.pub_types,
             pubmed_url=f"https://pubmed.ncbi.nlm.nih.gov/{p.pmid}/",
             is_retracted=p.is_retracted,
@@ -394,18 +397,29 @@ def finalize_claim(req: FinalizeRequest):
         for p in result.papers
     ]
 
+    total_pubmed_hits = (
+        max((q.hit_count for q in result.queries_executed), default=0)
+    )
+    last_query = (
+        result.queries_executed[-1].query_string if result.queries_executed else ""
+    )
+    # The new agent doesn't use the numeric relaxation ladder; surface the
+    # number of queries it took as a rough proxy for "how hard we had to look".
+    relaxation_proxy = max(0, len(result.queries_executed) - 1)
+    below_threshold = len(papers_out) < 10
+
     warning = None
-    if result.below_threshold:
+    if below_threshold:
         warning = (
-            f"Only {len(result.papers)} paper(s) were found for this claim. "
+            f"Only {len(papers_out)} paper(s) were found for this claim. "
             "Results may be limited. Try broadening your query."
         )
 
     return FinalizeResponse(
-        below_threshold=result.below_threshold,
-        total_pubmed_hits=result.total_pubmed_hits,
-        query_used=result.query_used,
-        relaxation_level=result.relaxation_level,
+        below_threshold=below_threshold,
+        total_pubmed_hits=total_pubmed_hits,
+        query_used=last_query,
+        relaxation_level=relaxation_proxy,
         papers=papers_out,
         warning=warning,
     )
