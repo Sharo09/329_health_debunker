@@ -21,8 +21,13 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Make sure Python can find your src/ package when running from backend/
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from dotenv import load_dotenv
+
+# Make sure Python can find the backend package when running from backend/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Load local environment variables from backend/.env in development
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,18 +36,18 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 # --- Station 1 imports (using your actual file structure) ---
-from src.extraction.extractor import ClaimExtractor
-from src.extraction.llm_client import LLMClient
+from backend.src.extraction.extractor import ClaimExtractor
+from backend.src.extraction.llm_client import LLMClient
 
 # --- Station 2 imports ---
-from src.elicitation.priority_table import get_priority
-from src.elicitation.question_templates import get_question
+from backend.src.elicitation.priority_table import get_priority
+from backend.src.elicitation.question_templates import get_question
 
 # --- Station 3 imports ---
-from src.retrieval.retrieval_agent import RetrievalAgent
+from backend.src.retrieval.retrieval_agent import RetrievalAgent
 
-# --- Shared schema (LockedPICO lives in src/schemas.py) ---
-from src.schemas import LockedPICO
+# --- Shared schema (LockedPICO lives in backend/src/schemas.py) ---
+from backend.src.schemas import LockedPICO
 
 # ---------------------------------------------------------------------------
 # App setup
