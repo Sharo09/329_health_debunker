@@ -9,11 +9,11 @@ Usage:
 
 import sys
 
-from src.elicitation import CLIAdapter, ElicitationAgent
-from src.extraction import ClaimExtractor, LLMClient
-from src.retrieval import RetrievalAgent
-from src.retrieval.schemas import Paper as RetrievedPaper
-from src.synthesis import (
+from backend.src.elicitation import CLIAdapter, ElicitationAgent
+from backend.src.extraction import ClaimExtractor, LLMClient
+from backend.src.retrieval import RetrievalAgent
+from backend.src.retrieval.schemas import Paper as RetrievedPaper
+from backend.src.synthesis import (
     Paper as ScorePaper,
     ScoreRequest,
     UserProfile,
