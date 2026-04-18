@@ -21,8 +21,10 @@ from src.synthesis import (
 )
 
 # Cap on papers passed to Station 4. The scorer sends every paper in a
-# single message; 20 abstracts fit comfortably in Gemini context.
-SYNTHESIS_PAPER_CAP = 20
+# single Gemini call; 40 abstracts still fit well within Flash's 1M
+# context and cost ~$0.004 per run. Raise to include more evidence, or
+# set to None to pass everything retrieval returned.
+SYNTHESIS_PAPER_CAP = 40
 
 # Map Station 2's population tokens → Station 4's DemographicGroup literal.
 _POPULATION_TO_DEMOGRAPHIC: dict[str, str] = {
@@ -166,7 +168,6 @@ def main() -> int:
                 print(f"  [{cp.stance}] PMID {cp.paper_id}  rel={cp.relevance_score:.2f}")
                 print(f"    {cp.title}")
                 print(f"    {cp.one_line_summary}")
-
     return 0
 
 
