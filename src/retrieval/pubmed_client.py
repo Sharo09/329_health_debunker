@@ -31,7 +31,7 @@ from typing import Optional
 import requests
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -44,6 +44,17 @@ logger = logging.getLogger(__name__)
 PUBMED_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 _DELAY_WITH_KEY = 0.11      # seconds  (just under 10 req/sec)
 _DELAY_WITHOUT_KEY = 0.35   # seconds  (just under 3 req/sec)
+
+
+class PubMedRateLimitError(PubMedAPIError):
+    """Raised on HTTP 429 so tenacity can retry with long backoff."""
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry transient network errors and rate-limit (429) responses."""
+    return isinstance(
+        exc, (requests.Timeout, requests.ConnectionError, PubMedRateLimitError)
+    )
 
 
 class PubMedClient:
@@ -145,32 +156,44 @@ class PubMedClient:
             time.sleep(self._delay - elapsed)
         self._last_request = time.time()
 
+    def _raise_for_status(self, resp: requests.Response, endpoint: str) -> None:
+        """Raise a typed error for HTTP failures — 429 gets its own class
+        so tenacity can retry it with long backoff."""
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("Retry-After")
+                msg = f"PubMed 429 rate-limited on {endpoint}"
+                if retry_after:
+                    msg += f" (Retry-After={retry_after}s)"
+                    try:
+                        time.sleep(min(float(retry_after), 60))
+                    except ValueError:
+                        pass
+                raise PubMedRateLimitError(msg) from e
+            raise PubMedAPIError(f"PubMed HTTP error on {endpoint}: {e}") from e
+
     @retry(
-        retry=retry_if_exception_type((requests.Timeout, requests.ConnectionError)),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        stop=stop_after_attempt(4),
+        retry=retry_if_exception(_is_retryable),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
+        stop=stop_after_attempt(6),
     )
     def _get_json(self, endpoint: str, params: dict) -> dict:
         self._throttle()
         resp = self._session.get(f"{PUBMED_BASE}/{endpoint}", params=params, timeout=20)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError as e:
-            raise PubMedAPIError(f"PubMed HTTP error on {endpoint}: {e}") from e
+        self._raise_for_status(resp, endpoint)
         return resp.json()
 
     @retry(
-        retry=retry_if_exception_type((requests.Timeout, requests.ConnectionError)),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        stop=stop_after_attempt(4),
+        retry=retry_if_exception(_is_retryable),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
+        stop=stop_after_attempt(6),
     )
     def _get_xml(self, endpoint: str, params: dict) -> str:
         self._throttle()
         resp = self._session.get(f"{PUBMED_BASE}/{endpoint}", params=params, timeout=30)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError as e:
-            raise PubMedAPIError(f"PubMed HTTP error on {endpoint}: {e}") from e
+        self._raise_for_status(resp, endpoint)
         return resp.text
 
     # ------------------------------------------------------------------

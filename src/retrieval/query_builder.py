@@ -67,17 +67,58 @@ FOOD_SYNONYMS: dict[str, list[str]] = {
 # normalise by replacing underscores with spaces before lookup.
 POPULATION_MESH: dict[str, str] = {
     "healthy adults":               "adult[MeSH Terms]",
+    "healthy replete":              "adult[MeSH Terms]",
     "elderly":                      "aged[MeSH Terms]",
     "older adults (65+)":           "aged[MeSH Terms]",
+    "pregnant":                     "pregnant women[MeSH Terms]",
     "pregnant or breastfeeding":    "pregnant women[MeSH Terms]",
     "pregnant women":               "pregnant women[MeSH Terms]",
     "children":                     "child[MeSH Terms]",
+    "infants":                      "infant[MeSH Terms]",
     "adolescents":                  "adolescent[MeSH Terms]",
     "athletes":                     "athletes[tiab]",
     "obese":                        "obesity[MeSH Terms]",
     "diabetic":                     "diabetes mellitus[MeSH Terms]",
+    "hypercholesterolemia":         "hypercholesterolemia[MeSH Terms]",
+    "deficient":                    "vitamin d deficiency[MeSH Terms]",
+    "lactose intolerant":           "lactose intolerance[MeSH Terms]",
+    "cardiovascular patients":      "cardiovascular diseases[MeSH Terms]",
+    "liver patients":               "liver diseases[MeSH Terms]",
+    "inflammatory patients":        "arthritis[MeSH Terms] OR inflammatory bowel diseases[MeSH Terms] OR autoimmune diseases[MeSH Terms]",
     "people with arthritis or inflammatory disease":
                                     "arthritis[MeSH Terms]",
+    "condition":                    "",  # generic "someone with a condition" → no useful filter
+}
+
+# Maps outcome slot values (Station 2 emits underscored tokens) → PubMed
+# expression. Unknown outcomes fall back to the underscore-normalised
+# free-text form in _outcome_block.
+OUTCOME_MESH: dict[str, str] = {
+    "cardiovascular_disease":   '"cardiovascular diseases"[MeSH Terms] OR "cardiovascular diseases"[tiab]',
+    "cancer":                   '"neoplasms"[MeSH Terms] OR "cancer"[tiab]',
+    "colorectal_cancer":        '"colorectal neoplasms"[MeSH Terms] OR "colorectal cancer"[tiab]',
+    "type_2_diabetes":          '"diabetes mellitus, type 2"[MeSH Terms] OR "type 2 diabetes"[tiab]',
+    "glucose_metabolism":       '"blood glucose"[MeSH Terms] OR "insulin resistance"[MeSH Terms]',
+    "bone_health":              '"bone density"[MeSH Terms] OR "osteoporosis"[MeSH Terms]',
+    "liver_health":             '"liver diseases"[MeSH Terms]',
+    "liver_disease":            '"liver diseases"[MeSH Terms]',
+    "fatty_liver":              '"non-alcoholic fatty liver disease"[MeSH Terms]',
+    "dental_caries":            '"dental caries"[MeSH Terms]',
+    "fetal_outcomes":           '"fetal development"[MeSH Terms] OR "pregnancy outcome"[MeSH Terms]',
+    "pregnancy_outcomes":       '"pregnancy outcome"[MeSH Terms]',
+    "sleep_anxiety":            '"sleep"[MeSH Terms] OR "anxiety"[MeSH Terms]',
+    "weight_loss":              '"weight loss"[MeSH Terms]',
+    "weight_gain":              '"weight gain"[MeSH Terms] OR "obesity"[MeSH Terms]',
+    "allergy_gi":               '"food hypersensitivity"[MeSH Terms]',
+    "growth_development":       '"child development"[MeSH Terms] OR "growth"[MeSH Terms]',
+    "microbiome":               '"gastrointestinal microbiome"[MeSH Terms]',
+    # Passthroughs — these already read as real MeSH/free-text terms.
+    "inflammation":             '"inflammation"[MeSH Terms] OR "inflammation"[tiab]',
+    "arthritis":                '"arthritis"[MeSH Terms]',
+    "cholesterol":              '"cholesterol"[MeSH Terms]',
+    "cognition":                '"cognition"[MeSH Terms]',
+    "mortality":                '"mortality"[MeSH Terms]',
+    "longevity":                '"longevity"[MeSH Terms]',
 }
 
 # Maps form slot values → lists of PubMed [tiab] terms.
@@ -130,14 +171,14 @@ class QueryBuilder:
                 "Cannot build any PubMed query: LockedPICO has no food and no outcome."
             )
 
-        # Form filter — only at FULL and DROP_POPULATION levels
-        if level <= RelaxationLevel.DROP_FORM:
+        # Form filter — kept only at FULL. DROP_FORM and beyond omit it.
+        if level < RelaxationLevel.DROP_FORM:
             form_block = self._form_block(pico)
             if form_block:
                 parts.append(form_block)
 
-        # Population filter — only at FULL and DROP_FORM levels
-        if level <= RelaxationLevel.DROP_POPULATION:
+        # Population filter — kept at FULL and DROP_FORM. DROP_POPULATION omits it.
+        if level < RelaxationLevel.DROP_POPULATION:
             pop_block = self._population_block(pico)
             if pop_block:
                 parts.append(pop_block)
@@ -195,8 +236,14 @@ class QueryBuilder:
     def _outcome_block(self, pico) -> Optional[str]:
         if not pico.outcome:
             return None
-        outcome = pico.outcome.strip()
-        return f'"{outcome}"[MeSH Terms] OR "{outcome}"[tiab]'
+        raw = pico.outcome.strip()
+        # Station 2 emits underscored tokens like "cardiovascular_disease".
+        # Prefer a curated MeSH mapping; fall back to underscore→space free text.
+        mapped = OUTCOME_MESH.get(raw.lower())
+        if mapped:
+            return mapped
+        display = raw.replace("_", " ")
+        return f'"{display}"[MeSH Terms] OR "{display}"[tiab]'
 
     def _form_block(self, pico) -> Optional[str]:
         if not pico.form:
@@ -214,9 +261,9 @@ class QueryBuilder:
             return None
         # Station 2 stores underscores (e.g. "healthy_adults"); normalise.
         pop_key = pico.population.strip().lower().replace("_", " ")
-        mesh = POPULATION_MESH.get(pop_key)
-        if mesh:
-            return mesh
+        if pop_key in POPULATION_MESH:
+            mesh = POPULATION_MESH[pop_key]
+            return mesh if mesh else None   # empty string means "no useful filter"
         # Free-text fallback for populations not in our lookup table
         logger.debug("Unknown population %r; using free-text fallback.", pico.population)
         return f'"{pico.population.replace("_", " ")}"[tiab]'
