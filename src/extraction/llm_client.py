@@ -38,13 +38,21 @@ def _default_gemini_provider(
     model: str,
     temperature: float,
 ) -> str:
-    """Default provider — calls Gemini via ``google-generativeai``."""
+    """Default provider — calls Gemini via the ``google-genai`` SDK.
+
+    Picks up ``GOOGLE_API_KEY`` / ``GEMINI_API_KEY`` from the
+    environment automatically. The older ``google-generativeai``
+    package is deprecated and can't serialize pydantic schemas that
+    include default-valued fields; the new ``google-genai`` package
+    handles pydantic classes natively.
+    """
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types as genai_types
     except ImportError as e:
         raise ImportError(
-            "google-generativeai is not installed. Install it with "
-            "`pip install google-generativeai` or pass a custom provider "
+            "google-genai is not installed. Install it with "
+            "`pip install google-genai` or pass a custom provider "
             "callable to LLMClient(provider=...)."
         ) from e
 
@@ -58,17 +66,16 @@ def _default_gemini_provider(
         role = "user" if m["role"] == "user" else "model"
         contents.append({"role": role, "parts": [{"text": m["content"]}]})
 
-    gen_model = genai.GenerativeModel(
-        model_name=model,
-        system_instruction=system_instruction,
-    )
-    response = gen_model.generate_content(
+    client = genai.Client()
+    response = client.models.generate_content(
+        model=model,
         contents=contents,
-        generation_config={
-            "temperature": temperature,
-            "response_mime_type": "application/json",
-            "response_schema": response_schema,
-        },
+        config=genai_types.GenerateContentConfig(
+            temperature=temperature,
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            system_instruction=system_instruction,
+        ),
     )
     return response.text
 

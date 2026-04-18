@@ -1,6 +1,10 @@
 """Live-LLM integration smoke test (Task 7).
 
 Skipped by default — set ``RUN_LIVE_TESTS=1`` to run.  Do NOT run in CI.
+
+Defaults to ``gemini-2.5-flash`` because ``gemini-2.5-pro`` has no
+free-tier quota on Google AI Studio (limit=0). Override the model with
+``LIVE_LLM_MODEL=gemini-2.5-pro`` if you're on a paid tier.
 """
 
 import os
@@ -16,7 +20,8 @@ from src.extraction.llm_client import LLMClient
     reason="live LLM test (set RUN_LIVE_TESTS=1 to run)",
 )
 def test_live_extraction_turmeric_inflammation():
-    client = LLMClient(model="gemini-2.5-pro")
+    model = os.getenv("LIVE_LLM_MODEL", "gemini-2.5-flash")
+    client = LLMClient(model=model)
     extractor = ClaimExtractor(client)
     pico = extractor.extract("Is turmeric good for inflammation?")
 

@@ -12,7 +12,9 @@ Running record of the Health Myth Debunker build, in the order work happened.
 - `pytest` (test runner)
 - `pydantic >= 2.0` (schemas)
 - `rapidfuzz` (fuzzy food-name matching)
-- `google-generativeai` is **not** installed; the default Gemini provider in `LLMClient` lazy-imports it and raises a helpful `ImportError` if called without the SDK. Tests use an injected mock provider.
+- `google-genai` (Gemini SDK, used by the default provider in `LLMClient`). Tests don't touch it — they inject a mock provider.
+
+**Note:** the project originally targeted `google-generativeai`, but Google deprecated that package and its structured-output path couldn't serialize pydantic schemas containing fields with defaults (`ValueError: Unknown field for Schema: default`). Swapped to the successor package `google-genai` during the first live-LLM test. Provider code in [src/extraction/llm_client.py](../src/extraction/llm_client.py) uses `google.genai.Client` and `GenerateContentConfig`; it picks up `GOOGLE_API_KEY` / `GEMINI_API_KEY` from the environment automatically.
 
 ---
 
@@ -163,6 +165,15 @@ Files:
 
 File:
 - [tests/test_extraction_integration.py](../tests/test_extraction_integration.py) — one test, skipped unless `RUN_LIVE_TESTS=1` is set. Verifies real-world extraction of `"Is turmeric good for inflammation?"` produces `food="turmeric"`, `is_food_claim=True`, and `"population" in ambiguous_slots`. **Do not run in CI.**
+
+Default model is `gemini-2.5-flash` (override via `LIVE_LLM_MODEL=gemini-2.5-pro` on paid tier). `gemini-2.5-pro` has zero free-tier quota on AI Studio — the pro model is paid-only per current Google policy.
+
+### Live run confirmation
+
+Ran the live test and ad-hoc extractions against real Gemini on 2026-04-17 — all passed:
+
+- Live integration test: passed in ~4s.
+- Four ad-hoc claims exercised: fully-specified (coffee/pregnancy/miscarriage), supplement-vs-dietary (curcumin), scope rejection (aspirin), and typo normalization (tumeric). Gemini 2.5 Flash extracted all four correctly, including doing its own food-name corrections ("curcumin" → food=turmeric, "tumeric" → turmeric) — the normalizer now serves as a safety net rather than the primary path.
 
 ---
 
