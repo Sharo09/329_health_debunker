@@ -67,15 +67,22 @@ def _default_gemini_provider(
         contents.append({"role": role, "parts": [{"text": m["content"]}]})
 
     client = genai.Client()
-    response = client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=genai_types.GenerateContentConfig(
-            temperature=temperature,
-            response_mime_type="application/json",
-            response_schema=response_schema,
-            system_instruction=system_instruction,
-        ),
+
+    # Retry on 429 with Retry-After honoured — matters on the free tier
+    # where the per-minute cap is tight (5 req/min on Flash).
+    from src.retrieval._gemini_retry import call_with_429_retry
+
+    response = call_with_429_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=genai_types.GenerateContentConfig(
+                temperature=temperature,
+                response_mime_type="application/json",
+                response_schema=response_schema,
+                system_instruction=system_instruction,
+            ),
+        )
     )
     return response.text
 

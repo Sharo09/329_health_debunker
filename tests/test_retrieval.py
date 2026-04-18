@@ -189,58 +189,64 @@ SAMPLE_XML = """<?xml version="1.0" ?>
 
 
 class TestPubMedClientParsing:
+    """Tests for the XML parser. Updated for the Task 1 rebuild: the
+    internal ``_parse_xml`` now returns dicts (per retrieval_spec.md),
+    and malformed XML raises ``PubMedParseError`` instead of silently
+    returning []. Public ``fetch()`` still returns ``Paper`` objects."""
+
     def setup_method(self):
         self.client = PubMedClient()
 
     def test_parses_pmid_title_abstract(self):
-        papers = self.client._parse_xml(SAMPLE_XML)
-        assert len(papers) == 1
-        p = papers[0]
-        assert p.pmid == "99887766"
-        assert "curcumin" in p.title.lower()
-        assert "BACKGROUND" in p.abstract
+        records = self.client._parse_xml(SAMPLE_XML)
+        assert len(records) == 1
+        r = records[0]
+        assert r["pmid"] == "99887766"
+        assert "curcumin" in r["title"].lower()
+        assert "BACKGROUND" in r["abstract"]
 
     def test_inline_markup_stripped_from_title(self):
-        # <i>inflammation</i> should be extracted as plain text
-        papers = self.client._parse_xml(SAMPLE_XML)
-        assert "<i>" not in papers[0].title
+        records = self.client._parse_xml(SAMPLE_XML)
+        assert "<i>" not in records[0]["title"]
 
     def test_structured_abstract_joined(self):
-        papers = self.client._parse_xml(SAMPLE_XML)
-        assert "RESULTS" in papers[0].abstract
-        assert "CONCLUSIONS" in papers[0].abstract
+        records = self.client._parse_xml(SAMPLE_XML)
+        assert "RESULTS" in records[0]["abstract"]
+        assert "CONCLUSIONS" in records[0]["abstract"]
 
     def test_pub_year_parsed(self):
-        papers = self.client._parse_xml(SAMPLE_XML)
-        assert papers[0].pub_year == 2023
+        records = self.client._parse_xml(SAMPLE_XML)
+        assert records[0]["year"] == 2023
 
     def test_doi_extracted(self):
-        papers = self.client._parse_xml(SAMPLE_XML)
-        assert papers[0].doi == "10.1234/jn.2023.001"
+        records = self.client._parse_xml(SAMPLE_XML)
+        assert records[0]["doi"] == "10.1234/jn.2023.001"
 
     def test_not_retracted(self):
-        papers = self.client._parse_xml(SAMPLE_XML)
-        assert not papers[0].is_retracted
+        records = self.client._parse_xml(SAMPLE_XML)
+        assert "Retracted Publication" not in records[0]["pub_types"]
 
     def test_retracted_paper_flagged(self):
         xml = SAMPLE_XML.replace(
             "<PublicationType>Randomized Controlled Trial</PublicationType>",
-            "<PublicationType>Retraction of Publication</PublicationType>"
+            "<PublicationType>Retracted Publication</PublicationType>"
         )
-        papers = self.client._parse_xml(xml)
-        assert papers[0].is_retracted
+        records = self.client._parse_xml(xml)
+        assert "Retracted Publication" in records[0]["pub_types"]
 
     def test_empty_xml_returns_empty_list(self):
         assert self.client._parse_xml("<PubmedArticleSet></PubmedArticleSet>") == []
 
-    def test_malformed_xml_returns_empty_list(self):
-        assert self.client._parse_xml("not xml <<<") == []
+    def test_malformed_xml_raises_parse_error(self):
+        from src.retrieval.errors import PubMedParseError
+        with pytest.raises(PubMedParseError):
+            self.client._parse_xml("not xml <<<")
 
     def test_missing_abstract_kept_with_empty_string(self):
         xml = SAMPLE_XML.replace("<Abstract>", "").replace("</Abstract>", "")
-        papers = self.client._parse_xml(xml)
-        assert len(papers) == 1
-        assert papers[0].abstract == ""
+        records = self.client._parse_xml(xml)
+        assert len(records) == 1
+        assert records[0]["abstract"] == ""
 
 
 # ===========================================================================

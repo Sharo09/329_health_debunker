@@ -174,6 +174,59 @@ _FEW_SHOT_EXAMPLES: list[dict[str, Any]] = [
             "notes": None,
         },
     },
+    # 11. COMPONENT INFERENCE — orange + flu → vitamin C implied.
+    # The claim names a whole food plus an outcome whose biological
+    # mechanism (if any) runs through a specific compound. Infer it.
+    {
+        "claim": "Does orange prevent flu?",
+        "pico": {
+            "raw_claim": "Does orange prevent flu?",
+            "food": {"value": "orange", "confidence": "explicit", "source_span": "orange"},
+            "form": {"value": "dietary", "confidence": "implied", "source_span": "orange"},
+            "dose": {"value": None, "confidence": "absent", "source_span": None},
+            "frequency": {"value": None, "confidence": "absent", "source_span": None},
+            "population": {"value": None, "confidence": "absent", "source_span": None},
+            "component": {"value": "vitamin C", "confidence": "implied", "source_span": None},
+            "outcome": {"value": "flu", "confidence": "explicit", "source_span": "flu"},
+            "is_food_claim": True,
+            "scope_rejection_reason": None,
+            "notes": None,
+        },
+    },
+    # 12. COMPONENT INFERENCE — red wine + heart → resveratrol implied.
+    {
+        "claim": "Is red wine good for the heart?",
+        "pico": {
+            "raw_claim": "Is red wine good for the heart?",
+            "food": {"value": "red wine", "confidence": "explicit", "source_span": "red wine"},
+            "form": {"value": None, "confidence": "absent", "source_span": None},
+            "dose": {"value": None, "confidence": "absent", "source_span": None},
+            "frequency": {"value": None, "confidence": "absent", "source_span": None},
+            "population": {"value": None, "confidence": "absent", "source_span": None},
+            "component": {"value": "resveratrol", "confidence": "implied", "source_span": None},
+            "outcome": {"value": "heart disease", "confidence": "implied", "source_span": "the heart"},
+            "is_food_claim": True,
+            "scope_rejection_reason": None,
+            "notes": None,
+        },
+    },
+    # 13. COMPONENT ALREADY NAMED — do NOT re-infer; use what the claim says.
+    {
+        "claim": "Does green tea catechin help burn fat?",
+        "pico": {
+            "raw_claim": "Does green tea catechin help burn fat?",
+            "food": {"value": "green tea", "confidence": "explicit", "source_span": "green tea"},
+            "form": {"value": None, "confidence": "absent", "source_span": None},
+            "dose": {"value": None, "confidence": "absent", "source_span": None},
+            "frequency": {"value": None, "confidence": "absent", "source_span": None},
+            "population": {"value": None, "confidence": "absent", "source_span": None},
+            "component": {"value": "catechin", "confidence": "explicit", "source_span": "catechin"},
+            "outcome": {"value": "weight loss", "confidence": "implied", "source_span": "burn fat"},
+            "is_food_claim": True,
+            "scope_rejection_reason": None,
+            "notes": None,
+        },
+    },
 ]
 
 
@@ -223,7 +276,7 @@ CONFIDENCE LEVELS
   - absent    the claim is silent on this slot. `value` MUST be null
               and `source_span` MUST be null.
 
-NEVER FABRICATE
+NEVER FABRICATE (with one narrow exception for component — see below)
 ---------------
 If the claim does not mention a slot, set `confidence` to "absent" and
 `value` to null. NEVER guess typical values. Examples of fabrication
@@ -236,6 +289,41 @@ you must avoid:
     Vague "bad" maps to outcome=absent.
 A missing slot is fine; a hallucinated slot poisons downstream
 retrieval.
+
+COMPONENT INFERENCE (narrow exception to "never fabricate")
+-----------------------------------------------------------
+The `component` slot is different from the others. When the claim names
+a whole food plus a health outcome, and the food has a well-known
+biologically relevant active compound that plausibly mediates that
+outcome, INFER the component with confidence="implied" and
+source_span=null. This is critical for downstream retrieval, which
+searches for mechanism literature (indexed under the component, not
+the food).
+
+Specific rules for component inference:
+  1. Only infer when there is a single, widely accepted active compound
+     for the food-outcome pair. If there are multiple plausible
+     candidates or the mechanism is disputed, leave component absent.
+  2. Use confidence="implied" (never "explicit" — explicit requires a
+     source_span copied verbatim from the claim).
+  3. If the claim already names a specific compound ("caffeine",
+     "curcumin", "catechin"), use that verbatim with "explicit" — do
+     NOT re-infer.
+  4. Do NOT infer for outcomes like "overall health" or "longevity"
+     that don't have a dominant mechanistic compound.
+
+Canonical food → component mappings (use these; extrapolate similar
+pairs from the same pattern):
+  - orange, citrus, lemon + respiratory infection / flu / cold → vitamin C
+  - turmeric + inflammation / arthritis → curcumin
+  - coffee + heart / cognition / alertness → caffeine
+  - green tea + weight / cancer → catechin (or EGCG)
+  - red wine + heart / longevity → resveratrol
+  - dark chocolate + heart → flavonoids (or flavanols)
+  - fatty fish + heart / cognition → omega-3 fatty acids
+  - tomato + prostate cancer → lycopene
+  - soy + hormone-related outcomes → isoflavones
+  - garlic + cardiovascular / cholesterol → allicin
 
 VAGUE-BUT-STATED VALUES
 -----------------------

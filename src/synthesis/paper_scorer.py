@@ -18,11 +18,17 @@ web backend if desired.
 from __future__ import annotations
 
 import json
+import logging
 import os
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from google import genai
 from google.genai import types
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_LOG_FILE = "logs/synthesis.jsonl"
 
 from src.synthesis.schemas import (
     AnalysisResponse,
@@ -66,32 +72,94 @@ def _client() -> genai.Client:
 # ---------------------------------------------------------------------------
 
 _SCORING_SYSTEM_PROMPT = """\
-You are a biomedical research analyst scoring research papers for topical relevance \
-to a user's health claim.
+You are a biomedical research analyst. For each paper, you assign a
+relevance score AND a stance label toward the user's claim.
 
-CRITICAL SCORING RULE:
-  Relevance is about TOPIC SIMILARITY, not agreement.
-  A paper that CONTRADICTS the user's claim is equally as relevant as one that SUPPORTS it,
-  if it addresses the same subject, substance, mechanism, or health outcome.
-  Never lower a score because a paper disagrees with the user's claim.
+TWO RULES YOU MUST NOT CONFLATE
+================================
 
-For each paper you will be given:
-  - The user's health claim
-  - The user's demographic profile
-  - The paper's extracted conclusion / claim
-  - The study population (if available)
-  - Relevant nutritional/chemical components (if available)
+RULE 1 — relevance_score is about TOPIC SIMILARITY, not agreement.
+A paper that CONTRADICTS the claim is just as relevant as one that
+supports it, if it studies the same intervention on the same outcome.
+Never lower the score because the paper disagrees.
 
-Relevance score guidance:
-  0.8–1.0 : Paper directly addresses the same substance/mechanism/outcome as the claim
-  0.5–0.79: Paper is on a closely related topic (e.g. same substance, different outcome)
-  0.2–0.49: Paper is tangentially related (e.g. related compound, same disease different pathway)
-  0.0–0.19: Paper is largely unrelated to the claim's topic
+RULE 2 — stance has a strict match test.  For a paper to count as
+"supports" / "contradicts" / "neutral" / "unclear", the paper MUST study:
 
-demographic_match = true if the paper's study population includes or broadly overlaps with the user's age group.
+  (a) THE CLAIMED INTERVENTION — the same food/compound/form as the claim.
+      • Claim says "eating an orange" → a paper about orange ESSENTIAL OIL
+        does NOT match. A paper on vitamin C supplements is a different
+        intervention than dietary orange, but is acceptable as a mechanism
+        match IF the user's PICO explicitly names vitamin C as the component.
+      • A paper on a DIFFERENT plant ("rockrose", "guava flavonoids",
+        "essential oils" in general) is NOT a match.
+      • A paper on extracts of a NON-EDIBLE part of the food (orange peel
+        compounds used in vaccine adjuvants) is NOT a match for a
+        dietary claim.
 
-Return a JSON object matching the provided schema. The `scores` field must contain
-one entry per paper, in the same order as the input.
+  (b) THE CLAIMED OUTCOME — and in a setting applicable to the claim.
+      • Claim is about preventing or treating a disease in humans → the
+        paper needs a clinical / epidemiological outcome in humans.
+      • In vitro enzyme-binding, molecular docking, computational models,
+        in silico studies, animal-only studies, or diagnostic-tool /
+        sensor / surveillance papers do NOT test the prevention claim.
+      • A review of a different topic that merely mentions the food in
+        passing does NOT count.
+
+  (c) CONSISTENCY WITH THE CLAIMED DIRECTION for "supports" / "contradicts":
+      • "supports" requires the paper to report an effect in the direction
+        the claim asserts. If the claim is "X prevents Y" and the paper
+        says "X may reduce Y risk", supports. If "X has no effect on Y",
+        contradicts or neutral depending on the effect size.
+
+If ANY of (a), (b), (c) fail, the stance MUST be "not_applicable".
+Papers with stance="not_applicable" will be DROPPED from the verdict
+computation downstream — they are not evidence.
+
+CALIBRATION EXAMPLES
+====================
+
+Claim: "Does eating an orange prevent flu?"
+
+ • Cochrane review "Vitamin C for preventing and treating the common cold"
+   — intervention=vitamin C (matches PICO component), outcome=common cold
+   / URI (adjacent to flu), humans. → relevance=0.85,
+   stance=supports/contradicts depending on finding.
+
+ • RCT "Daily orange juice consumption and incidence of colds in children"
+   — intervention=orange juice (dietary), outcome=colds, humans. →
+   relevance=0.95, stance=depends on finding.
+
+ • In silico "Flavanones in citrus peel bind to influenza neuraminidase"
+   — intervention=isolated compounds from inedible peel, outcome=enzyme
+   binding (not disease prevention), not human. → relevance=0.30,
+   stance=not_applicable (wrong intervention AND wrong outcome setting).
+
+ • Review "CYSTUS052 rockrose extract against flu"
+   — intervention=rockrose (different plant entirely). → relevance=0.10,
+   stance=not_applicable.
+
+ • Paper "Essential oils as antimicrobial agents in food preservation"
+   — intervention=essential oils (not dietary consumption of fruit), and
+   the outcome is food preservation, not human flu. → relevance=0.10,
+   stance=not_applicable.
+
+ • Surveillance paper "Diagnostic accuracy of rapid flu tests"
+   — doesn't involve the food at all. → relevance=0.05,
+   stance=not_applicable.
+
+RELEVANCE SCORE GUIDE
+=====================
+  0.8–1.0 : studies the SAME intervention on the SAME outcome in humans
+  0.5–0.79: related intervention (known mechanism compound) on same outcome
+  0.2–0.49: tangentially related (different compound, same disease area)
+  0.0–0.19: largely unrelated
+
+demographic_match = true if the paper's study population overlaps with
+the user's age group.
+
+Return a JSON object matching the provided schema. The ``scores`` field
+must contain one entry per paper, IN THE SAME ORDER as the input.
 """
 
 
@@ -127,6 +195,8 @@ def score_papers(request: ScoreRequest, model: str = DEFAULT_MODEL) -> ScoreResp
             response_mime_type="application/json",
             response_schema=ScoreList,
             system_instruction=_SCORING_SYSTEM_PROMPT,
+            # Structured scoring against a clear rubric — no thinking pass needed.
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
     parsed = ScoreList.model_validate_json(response.text)
@@ -147,25 +217,66 @@ You are a biomedical evidence synthesis expert producing a final verdict on a he
 You will receive:
   - The user's health claim
   - The user's demographic profile
-  - A list of research papers, each annotated with:
-      * relevance_score (0.0–1.0)  — how topically relevant the paper is
-      * stance                     — supports / contradicts / neutral / unclear
-      * applies_to                 — demographic groups covered by the paper
-      * demographic_match          — whether the paper's population matches the user's
+  - A list of scored papers. Each paper has:
+      * relevance_score (0.0–1.0)  — topical relevance
+      * stance                     — supports / contradicts / neutral / unclear / not_applicable
+      * applies_to                 — demographic groups the finding applies to
+      * demographic_match          — overlaps the user's population
 
-VERDICT RULES:
-  - Only include papers with relevance_score ≥ 0.4 in the cited lists.
-  - "supported" requires at least one high-relevance (≥ 0.7) paper that supports,
-    AND the relevance-weighted support mass exceeds the contradiction mass.
+HARD FILTERING RULES (apply BEFORE thinking about the verdict)
+==============================================================
+
+1. DROP every paper with stance="not_applicable". These studied a
+   different intervention or a different outcome; they are NOT evidence
+   for or against the claim. They do not appear in supporting_papers,
+   contradicting_papers, or neutral_papers. Do not mention them in
+   verdict_reasoning except optionally as "N papers were retrieved but
+   studied a different intervention and were excluded."
+
+2. DROP every paper with relevance_score < 0.4. Low-relevance papers
+   are noise.
+
+After these filters, compute the verdict ONLY from the remaining
+supports / contradicts / neutral / unclear papers.
+
+VERDICT RULES
+=============
+
+  - "supported" requires at least one high-relevance (≥ 0.7) paper
+    with stance="supports", AND the relevance-weighted support mass
+    strictly exceeds the contradiction mass. If the highest-quality
+    evidence (systematic reviews, meta-analyses, RCTs) contradicts,
+    do NOT vote "supported" just because there are more observational
+    papers on the other side.
   - "contradicted" is the mirror.
-  - Default to "insufficient_evidence" when evidence is sparse, mixed, or low-relevance.
-  - confidence_percent reflects evidential strength, not the prior probability of the claim.
-    A single very strong meta-analysis might warrant 85%; three weak observational studies 35%.
+  - "insufficient_evidence" is the default when:
+      * <2 papers remain after filtering, OR
+      * remaining papers are all neutral/unclear, OR
+      * evidence is split with no tier-1 tie-breaker.
 
-DEMOGRAPHIC CAVEAT:
-  If most relevant evidence comes from a population that differs meaningfully from the user
-  (e.g., evidence is from elderly adults but user is a child), note the gap.
-  Set demographic_caveat to null if no meaningful gap exists.
+  - confidence_percent reflects evidential strength, not prior
+    probability of the claim. A single Cochrane review against, with
+    nothing opposing it, warrants ~80%. Mixed low-quality evidence
+    warrants ~35%.
+
+  - CONFIDENCE CEILINGS (do not exceed without meeting the criterion):
+      * ≥80 — ONLY if ≥1 systematic review or meta-analysis AND ≥3 other
+              tier-2+ studies (RCTs, large cohorts) pointing the same way.
+      * 60–79 — ≥1 SR/meta-analysis OR ≥3 consistent RCTs.
+      * 40–59 — ≥3 consistent observational/pilot studies, OR mixed
+              signals where majority supports.
+      * ≤39 — 1–2 papers surviving the filter; evidence base is too
+              thin to be confident either way regardless of direction.
+
+    A verdict built on only 3–4 small/pilot/preliminary studies CANNOT
+    be ≥80% confident, even if they all point the same way.
+
+DEMOGRAPHIC CAVEAT
+==================
+  If most relevant evidence comes from a population that differs
+  meaningfully from the user (e.g., evidence is from elderly adults
+  but user is a child), note the gap. Set demographic_caveat=null
+  if no meaningful gap exists.
 
 Return a single JSON object matching the provided schema.
 """
@@ -205,19 +316,29 @@ def generate_verdict(
     scored: list[PaperScoreResult],
     papers_by_id: dict[str, Paper],
     model: str = DEFAULT_MODEL,
+    enable_thinking: bool = True,
 ) -> VerdictResult:
-    """Synthesise scored papers into a final verdict with confidence %."""
+    """Synthesise scored papers into a final verdict with confidence %.
+
+    Verdict synthesis benefits from reasoning across papers — keep
+    thinking enabled by default. Set ``enable_thinking=False`` to trade
+    some nuance for ~30% faster response.
+    """
+    config_kwargs = dict(
+        temperature=0.0,
+        response_mime_type="application/json",
+        response_schema=VerdictResult,
+        system_instruction=_VERDICT_SYSTEM_PROMPT,
+    )
+    if not enable_thinking:
+        config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
     response = _client().models.generate_content(
         model=model,
         contents=_build_verdict_message(
             user_claim, user_profile, scored, papers_by_id
         ),
-        config=types.GenerateContentConfig(
-            temperature=0.0,
-            response_mime_type="application/json",
-            response_schema=VerdictResult,
-            system_instruction=_VERDICT_SYSTEM_PROMPT,
-        ),
+        config=types.GenerateContentConfig(**config_kwargs),
     )
     return VerdictResult.model_validate_json(response.text)
 
@@ -226,8 +347,12 @@ def generate_verdict(
 # Full pipeline
 # ---------------------------------------------------------------------------
 
-def analyze_claim(request: ScoreRequest, model: str = DEFAULT_MODEL) -> AnalysisResponse:
-    """Full pipeline: score → synthesize."""
+def analyze_claim(
+    request: ScoreRequest,
+    model: str = DEFAULT_MODEL,
+    log_file: str | None = None,
+) -> AnalysisResponse:
+    """Full pipeline: score → synthesize. Writes an audit record to jsonl."""
     scored_response = score_papers(request, model=model)
     papers_by_id = {p.paper_id: p for p in request.papers}
     verdict = generate_verdict(
@@ -237,12 +362,58 @@ def analyze_claim(request: ScoreRequest, model: str = DEFAULT_MODEL) -> Analysis
         papers_by_id=papers_by_id,
         model=model,
     )
-    return AnalysisResponse(
+    result = AnalysisResponse(
         user_claim=request.user_claim,
         user_profile=request.user_profile,
         paper_scores=scored_response.results,
         verdict=verdict,
     )
+    _log_synthesis(result, papers_by_id, log_file or DEFAULT_LOG_FILE, model)
+    return result
+
+
+def _log_synthesis(
+    result: AnalysisResponse,
+    papers_by_id: dict[str, Paper],
+    log_file: str,
+    model: str,
+) -> None:
+    """Append one JSONL record capturing every score + the final verdict."""
+    # Tally stances to surface at a glance.
+    stance_counts: dict[str, int] = {}
+    for s in result.paper_scores:
+        stance_counts[s.stance] = stance_counts.get(s.stance, 0) + 1
+
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "model": model,
+        "user_claim": result.user_claim,
+        "user_profile": result.user_profile.model_dump(),
+        "verdict": result.verdict.verdict,
+        "confidence_percent": result.verdict.confidence_percent,
+        "demographic_caveat": result.verdict.demographic_caveat,
+        "verdict_reasoning": result.verdict.verdict_reasoning,
+        "papers_scored": len(result.paper_scores),
+        "stance_counts": stance_counts,
+        # Full per-paper scores — the crucial data for diagnosing
+        # "why did this verdict come out this way?".
+        "paper_scores": [
+            {
+                **s.model_dump(),
+                "title": (papers_by_id.get(s.paper_id).title
+                          if s.paper_id in papers_by_id else None),
+            }
+            for s in result.paper_scores
+        ],
+        "cited_supporting": [p.paper_id for p in result.verdict.supporting_papers],
+        "cited_contradicting": [p.paper_id for p in result.verdict.contradicting_papers],
+        "cited_neutral": [p.paper_id for p in result.verdict.neutral_papers],
+    }
+    log_dir = os.path.dirname(log_file)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    with open(log_file, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, default=str) + "\n")
 
 
 # ---------------------------------------------------------------------------

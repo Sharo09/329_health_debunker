@@ -12,7 +12,7 @@ import sys
 from src.elicitation import CLIAdapter, ElicitationAgent
 from src.extraction import ClaimExtractor, LLMClient
 from src.retrieval import RetrievalAgent
-from src.retrieval.schemas import Paper as RetrievedPaper
+from src.retrieval.schemas import RetrievedPaper
 from src.synthesis import (
     Paper as ScorePaper,
     ScoreRequest,
@@ -48,7 +48,7 @@ _POPULATION_TO_DEMOGRAPHIC: dict[str, str] = {
 
 
 def _retrieved_to_score_paper(p: RetrievedPaper) -> ScorePaper:
-    """Adapt Station 3's Paper to Station 4's Paper schema.
+    """Adapt Station 3's RetrievedPaper to Station 4's Paper schema.
 
     Station 4 wants `extracted_claim` — a 1–3 sentence conclusion.  We
     don't have one, so we use the last two sentences of the abstract as
@@ -113,15 +113,25 @@ def main() -> int:
     # ---- Station 3: Retrieval -------------------------------------------
     print()
     print("=" * 72)
-    print("STATION 3 — Retrieval (PubMed)")
+    print("STATION 3 — Retrieval (agentic PubMed + FDA CAERS)")
     print("=" * 72)
     retrieval = RetrievalAgent().retrieve(locked)
 
-    print(f"Query used       : {retrieval.query_used}")
-    print(f"Relaxation level : {retrieval.relaxation_level}")
-    print(f"Total PubMed hits: {retrieval.total_pubmed_hits}")
+    print(f"Agent iterations : {retrieval.total_iterations}")
+    print(f"Queries executed : {len(retrieval.queries_executed)}")
     print(f"Papers returned  : {len(retrieval.papers)}")
-    print(f"Below threshold  : {retrieval.below_threshold}")
+    print(f"CAERS reports    : {len(retrieval.caers_reports)}")
+    print(f"Budget exhausted : {retrieval.budget_exhausted}")
+    if retrieval.finish_rationale:
+        print(f"Agent rationale  : {retrieval.finish_rationale}")
+    if retrieval.queries_executed:
+        last = retrieval.queries_executed[-1]
+        print(f"Last query       : {last.query_string[:120]}"
+              + ("..." if len(last.query_string) > 120 else ""))
+    print("Concepts resolved:")
+    for slot, concept in retrieval.concept_resolutions.items():
+        print(f"  {slot:20s}: {concept.user_term!r} → mesh={concept.mesh_terms}"
+              f" (validated={concept.validated})")
 
     if not retrieval.papers:
         print()

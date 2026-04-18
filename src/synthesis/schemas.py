@@ -85,16 +85,33 @@ class PaperScoreResult(BaseModel):
         ...,
         description="True if the paper's population overlaps with the user's demographic group",
     )
-    stance: Literal["supports", "contradicts", "neutral", "unclear"] = Field(
+    stance: Literal[
+        "supports",
+        "contradicts",
+        "neutral",
+        "unclear",
+        "not_applicable",
+    ] = Field(
         ...,
         description=(
-            "Whether the paper's conclusion supports, contradicts, or is neutral toward "
-            "the user's claim. Informational only — does NOT affect relevance_score."
+            "Stance toward the user's claim.\n"
+            "  supports       — the paper studies the SAME intervention on the SAME outcome "
+            "in humans and reports an effect consistent with the claim.\n"
+            "  contradicts    — same matching criteria, but effect opposite to the claim.\n"
+            "  neutral        — studies the claimed intervention/outcome but finds no "
+            "significant effect either way.\n"
+            "  unclear        — studies the right things but conclusions are ambiguous.\n"
+            "  not_applicable — studies something different (different compound, different "
+            "outcome, in vitro / animal when a human claim was made, essential oils for a "
+            "food claim, etc.). These do NOT count toward the verdict."
         ),
     )
     reasoning: str = Field(
         ...,
-        description="Brief explanation (2-4 sentences) justifying the score and demographic assessment",
+        description=(
+            "Brief explanation (2-4 sentences) justifying the score and stance. "
+            "If stance is not_applicable, explicitly state the intervention or outcome mismatch."
+        ),
     )
 
 
@@ -127,7 +144,7 @@ class CitedPaper(BaseModel):
     paper_id: str
     title: str
     url: str | None = Field(None, description="Link to the paper (from input; may be null)")
-    stance: Literal["supports", "contradicts", "neutral", "unclear"]
+    stance: Literal["supports", "contradicts", "neutral", "unclear", "not_applicable"]
     relevance_score: float
     applies_to: list[DemographicGroup]
     demographic_match: bool

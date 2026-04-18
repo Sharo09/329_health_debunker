@@ -47,8 +47,10 @@ def test_at_least_six_few_shot_examples():
     assert len(_FEW_SHOT_EXAMPLES) >= 6
 
 
-def test_at_most_ten_few_shot_examples():
-    assert len(_FEW_SHOT_EXAMPLES) <= 10
+def test_few_shot_example_count_within_range():
+    # We now have 13 examples (added 3 for the component-inference rule).
+    # Keep a sane upper bound to catch prompt bloat.
+    assert 6 <= len(_FEW_SHOT_EXAMPLES) <= 20
 
 
 @pytest.mark.parametrize("idx,example", list(enumerate(_FEW_SHOT_EXAMPLES)))
