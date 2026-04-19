@@ -4,17 +4,23 @@ Running record of the Health Myth Debunker build, in the order work happened.
 
 ## Test-suite status
 
-- **471 passed, 1 skipped** (the skipped test is the gated live-LLM integration check in `tests/test_extraction_integration.py`).
+- **631 passed, 2 skipped** (skipped: the two gated live-LLM tests in `tests/test_extraction_integration.py` and `tests/test_retrieval_live.py`).
 - Run: `python3 -m pytest tests/ -q`.
+- TypeScript: `cd frontend && npx tsc --noEmit` clean.
 
 ## Dependencies installed
 
 - `pytest` (test runner)
 - `pydantic >= 2.0` (schemas)
 - `rapidfuzz` (fuzzy food-name matching)
-- `google-genai` (Gemini SDK, used by the default provider in `LLMClient`). Tests don't touch it — they inject a mock provider.
+- `google-genai` (Gemini SDK)
+- `requests`, `tenacity` (HTTP + retry)
+- `diskcache` (Station 3 caching)
+- `anthropic`, `fastapi` (Sharon's earlier Station 4 + later API server — Anthropic dep is dormant; we run on Gemini)
+- `python-dotenv` (Sharon's backend wrapper)
+- Node v20.18.1 + Vite + React + TypeScript (frontend)
 
-**Note:** the project originally targeted `google-generativeai`, but Google deprecated that package and its structured-output path couldn't serialize pydantic schemas containing fields with defaults (`ValueError: Unknown field for Schema: default`). Swapped to the successor package `google-genai` during the first live-LLM test. Provider code in [src/extraction/llm_client.py](../src/extraction/llm_client.py) uses `google.genai.Client` and `GenerateContentConfig`; it picks up `GOOGLE_API_KEY` / `GEMINI_API_KEY` from the environment automatically.
+**Note on Gemini SDK:** The project originally targeted `google-generativeai`, but Google deprecated that package and its structured-output path couldn't serialize pydantic schemas containing fields with defaults (`ValueError: Unknown field for Schema: default`). Swapped to the successor package `google-genai` during the first live-LLM test. Provider code in [src/extraction/llm_client.py](../src/extraction/llm_client.py) uses `google.genai.Client` and `GenerateContentConfig`; it picks up `GOOGLE_API_KEY` / `GEMINI_API_KEY` from the environment automatically.
 
 ---
 
@@ -232,9 +238,216 @@ Tests:
 - [tests/test_extractor.py](../tests/test_extractor.py)
 - [tests/test_extraction_integration.py](../tests/test_extraction_integration.py) (Station 1, live-gated)
 
-## Not yet built
+---
 
-- Station 3 (Retrieval — PubMed + FDA CAERS).
-- Station 4 (Synthesis — deterministic rules over evidence).
-- Station 5 (Presentation — Streamlit demo UI). `StreamlitAdapter` in Station 2 is a functional stub; Station 5 will likely refine the UX.
-- Pipeline orchestrator wiring the four upstream stations together (the extraction → elicitation handoff is already drop-in compatible; the remaining wiring depends on Stations 3 and 4).
+## Station 3 — Retrieval (rebuilt per `docs/retrieval_spec.md`)
+
+Sharon's first retrieval pass used hardcoded MeSH-string concatenation
+(`"orange"[MeSH Terms]` — the colour, not the fruit). Full reconstruction:
+
+| # | Task | Files | Tests |
+|---|------|-------|-------|
+| 1 | PubMed client | [pubmed_client.py](../src/retrieval/pubmed_client.py), [errors.py](../src/retrieval/errors.py), [schemas.py](../src/retrieval/schemas.py) | 26 |
+| 2 | CAERS client (openFDA food/event) | [caers_client.py](../src/retrieval/caers_client.py) | 31 |
+| 3 | **Concept resolver** — LLM-based MeSH lookup with PubMed-count validation | [concept_resolver.py](../src/retrieval/concept_resolver.py) | 19 |
+| 4 | Concept-based query builder | [query_builder.py](../src/retrieval/query_builder.py) | 26 |
+| 5 | Retrieval tools (the agent's tool catalogue) | [retrieval_tools.py](../src/retrieval/retrieval_tools.py), [agent_state.py](../src/retrieval/agent_state.py) | 23 |
+| 6 | **Retrieval agent** — Gemini function-calling tool-use loop | [agent_llm.py](../src/retrieval/agent_llm.py), [retrieval_agent.py](../src/retrieval/retrieval_agent.py) | 12 |
+| 7 | Parallel CAERS track (in retrieval agent) | (above) | (in #6) |
+| 8 | Disk-backed cache | [cache.py](../src/retrieval/cache.py) | 4 |
+| 9 | JSONL audit log (in retrieval agent) | (above) | (in #6) |
+| 10 | Integration tests across 5 demo PICOs | [test_retrieval_integration.py](../tests/test_retrieval_integration.py) | 6 |
+| 11 | Live smoke test (gated) | [test_retrieval_live.py](../tests/test_retrieval_live.py) | 1 skipped |
+
+The orange/flu regression — `"orange"[MeSH]` returning the colour — is
+fixed at the concept-resolver layer: the resolver explicitly maps
+"orange" + food-context → `Citrus sinensis`, validates via PubMed hit
+count, and surfaces the corrected MeSH downstream.
+
+**Ratio of new vs. legacy:** when this work was done, the legacy
+retrieval files coexisted with new ones (`retrieval_agent_new.py`,
+`concept_query_builder.py`). They were collapsed in the cleanup pass
+(below).
+
+---
+
+## Station 4 — Synthesis (rebuilt by Sharon, then expanded)
+
+Sharon delivered an initial Anthropic-based version. Two follow-ups:
+
+1. **SDK swap** — moved from Anthropic to Gemini for cost and to keep
+   the project on a single LLM vendor. [src/synthesis/paper_scorer.py](../src/synthesis/paper_scorer.py).
+2. **Bug-fix pass** triggered by a real run on "does orange prevent flu"
+   that came back `SUPPORTED 80%` despite the literature being mixed.
+   Four root-cause fixes:
+   - **Bug 1 — extraction must infer component.** Added a
+     "COMPONENT INFERENCE" section to the extraction prompt with a
+     curated food→component table (orange→vitamin C, turmeric→curcumin,
+     coffee→caffeine, red wine→resveratrol, etc.) and three new
+     few-shot examples. [src/extraction/prompt.py](../src/extraction/prompt.py).
+   - **Bug 2 — `get_related_concept` was returning tautologies.** The
+     resolver got a dedicated `resolve_related()` method with its own
+     prompt (explicit instructions and few-shots like
+     *Influenza, Human → Common Cold*), plus a post-hoc validator that
+     rejects results whose MeSH terms overlap >50% with the original
+     and retries once. [src/retrieval/concept_resolver.py](../src/retrieval/concept_resolver.py).
+   - **Bug 3 — agent was finishing after one query.** Added two guards:
+     (i) `pubmed_search` now returns a `productive` boolean (≥5 new
+     PMIDs) and a running `productive_queries_so_far` counter, and
+     `finish` is rejected unless that counter is ≥2 (or the rationale
+     contains a `below_threshold`-style bypass token); (ii) duplicate
+     tool calls (same name + same args) are rejected by the dispatcher
+     to force the agent to try a different strategy. [src/retrieval/agent_state.py](../src/retrieval/agent_state.py), [src/retrieval/retrieval_tools.py](../src/retrieval/retrieval_tools.py).
+   - **Bug 4 — synthesis stance classifier was too loose.** Added a
+     `not_applicable` stance to drop intervention-mismatch papers
+     (essential oils, in-vitro flavanone studies, off-topic plant
+     extracts) and rewrote both the scoring prompt and the verdict
+     prompt to enforce intervention + outcome match before counting
+     a paper as supports / contradicts / neutral. Added explicit
+     confidence ceilings (~80% requires ≥1 SR/meta + ≥3 RCTs).
+     [src/synthesis/paper_scorer.py](../src/synthesis/paper_scorer.py),
+     [src/synthesis/schemas.py](../src/synthesis/schemas.py).
+
+   After the four fixes, "does orange prevent flu" produces
+   **INSUFFICIENT_EVIDENCE 50%** with 4 supporting + 3 contradicting
+   + 8 neutral cited papers (Cochrane vitamin C reviews on both sides).
+3. **Disabled Gemini "thinking" on score_papers** — the structured
+   rubric scoring doesn't benefit from the reasoning pass; verdict
+   keeps thinking on. ~30% latency cut on the scoring call.
+4. **Synthesis logging** — every run writes a full audit record to
+   `logs/synthesis.jsonl` with per-paper stances and the final verdict.
+
+---
+
+## Sharon's frontend integration
+
+After Stations 1–4 worked end-to-end on the CLI, merged Sharon's
+`sharon2` branch which contained:
+- Vite/React/TypeScript frontend (`frontend/`)
+- FastAPI backend wrapper (`backend/main.py`)
+- `Dockerfile`, `.gitignore`
+
+Cherry-picked only the additive files; rewrote `backend/main.py` imports
+to point at the canonical `src/` (her `backend/src/` copies were stale
+from before the retrieval rebuild). Added `python-dotenv` dep.
+
+---
+
+## Streaming UX
+
+Split `/api/finalize` into two endpoints so the user sees retrieved
+papers ~25s before the verdict appears:
+
+- `/api/finalize` — Stations 1+2+3, returns `papers` + locked PICO
+  summary (no `verdict`).
+- `/api/synthesize` — Station 4 only, takes the `papers` from finalize,
+  returns `verdict`.
+
+Frontend ([App.tsx](../frontend/src/App.tsx)) calls them sequentially
+in `handleRunAnalysis`. Retrieved papers + the user's claim + the
+locked-PICO chips appear immediately after retrieval; a slate
+"Synthesizing verdict from N papers… ~20–30 seconds" placeholder shows
+where the verdict will land. When `/api/synthesize` returns, the
+placeholder is replaced by the verdict banner + tabs.
+
+Trade-off: total wall time unchanged, perceived wait roughly halved
+because reading time and verdict-cooking time overlap.
+
+---
+
+## Dead-code cleanup
+
+Once the new pipeline was live, removed:
+
+| Removed | Replaced by |
+|---|---|
+| `src/retrieval/retrieval_agent.py` (Sharon's legacy) | renamed `retrieval_agent_new.py` → canonical name |
+| `src/retrieval/query_builder.py` (Sharon's string-concat) | renamed `concept_query_builder.py` → canonical name |
+| `tests/test_retrieval.py` (legacy tests) | replaced by `test_pubmed_client.py`, `test_query_builder.py`, `test_retrieval_agent.py` |
+| `PubMedClient.search()` / `.fetch()` legacy shims | `.esearch()` / `.fetch_details()` |
+| `Paper` dataclass + `RetrievalResult` dataclass | pydantic `RetrievedPaper` + `RetrievalResult` (V2 suffix dropped) |
+| `LegacyRetrievalAgent` / `legacy_retrieve` aliases in `__init__.py` | gone |
+
+Net: −2 modules, −2 dataclasses, −2 PubMedClient methods, −41 legacy
+tests. Test count went 662 → 622, all passing.
+
+---
+
+## Adaptive (literature-informed) elicitation — Station 2 v2
+
+Per a fresh design pass, replaced the static priority-table elicitor
+with an **adaptive** agent that probes PubMed *before* asking the user
+anything. New file [src/elicitation/adaptive_elicitor.py](../src/elicitation/adaptive_elicitor.py)
+(static `ElicitationAgent` is unchanged — kept as a sibling for
+fallbacks).
+
+Workflow:
+1. Resolve PICO concepts via the existing concept resolver.
+2. Enumerate candidate evidence "slices" — combinations of slot
+   overrides that materially change PubMed retrieval (food×outcome,
+   component×outcome, food×related_outcome, component×related_outcome).
+3. Probe each slice with `pubmed.count()` — cheap, ~200ms per call.
+4. Rank slices by hit count.
+5. If top/bottom ratio > 10× → ask the user, with hit counts visible
+   in the option text ("Vitamin C for common cold (strong evidence,
+   2,341+ papers)"). Options are sorted by evidence depth.
+6. If ratio < 3× → silently pick the most-populous slice (the choice
+   doesn't materially change retrieval).
+7. Optionally probe + ask population on the chosen slice.
+
+Budgets: max 15 PubMed `count` calls, max 3 user questions. Both hard caps.
+
+The user's pick is encoded as an `overrides` dict (e.g.
+`{"_use_component_focus": "true", "outcome": "common cold"}`) carried
+through the option_value as JSON; the agent applies the overrides to
+the LockedPICO.
+
+Tests: [tests/test_adaptive_elicitor.py](../tests/test_adaptive_elicitor.py) (8 tests covering
+high-impact ask, low-impact silent pick, insufficient-evidence
+auto-pick, probe budget cap, fallback marking, audit-log integrity).
+
+This is a methodological contribution worth flagging in the report:
+**adaptive literature-informed elicitation routes users toward
+productive queries based on what the literature actually contains,
+rather than asking abstract questions about per-food priority slots.**
+
+---
+
+## File inventory (current)
+
+Source:
+- [src/__init__.py](../src/__init__.py)
+- [src/schemas.py](../src/schemas.py)
+- [src/elicitation/__init__.py](../src/elicitation/__init__.py)
+- [src/elicitation/priority_table.py](../src/elicitation/priority_table.py)
+- [src/elicitation/question_templates.py](../src/elicitation/question_templates.py)
+- [src/elicitation/errors.py](../src/elicitation/errors.py)
+- [src/elicitation/ui_adapter.py](../src/elicitation/ui_adapter.py)
+- [src/elicitation/elicitor.py](../src/elicitation/elicitor.py) (static)
+- [src/elicitation/adaptive_elicitor.py](../src/elicitation/adaptive_elicitor.py) (NEW — literature-informed)
+- [src/extraction/](../src/extraction/) (unchanged)
+- [src/retrieval/__init__.py](../src/retrieval/__init__.py)
+- [src/retrieval/agent_llm.py](../src/retrieval/agent_llm.py)
+- [src/retrieval/agent_state.py](../src/retrieval/agent_state.py)
+- [src/retrieval/cache.py](../src/retrieval/cache.py)
+- [src/retrieval/caers_client.py](../src/retrieval/caers_client.py)
+- [src/retrieval/concept_resolver.py](../src/retrieval/concept_resolver.py)
+- [src/retrieval/errors.py](../src/retrieval/errors.py)
+- [src/retrieval/pubmed_client.py](../src/retrieval/pubmed_client.py)
+- [src/retrieval/query_builder.py](../src/retrieval/query_builder.py)
+- [src/retrieval/retrieval_agent.py](../src/retrieval/retrieval_agent.py)
+- [src/retrieval/retrieval_tools.py](../src/retrieval/retrieval_tools.py)
+- [src/retrieval/schemas.py](../src/retrieval/schemas.py)
+- [src/retrieval/_gemini_retry.py](../src/retrieval/_gemini_retry.py)
+- [src/synthesis/__init__.py](../src/synthesis/__init__.py)
+- [src/synthesis/paper_scorer.py](../src/synthesis/paper_scorer.py)
+- [src/synthesis/schemas.py](../src/synthesis/schemas.py)
+- [backend/main.py](../backend/main.py) (FastAPI: `/api/extract`, `/api/finalize`, `/api/synthesize`, `/api/health`)
+- [frontend/src/App.tsx](../frontend/src/App.tsx) + [frontend/src/api.ts](../frontend/src/api.ts)
+- [demo.py](../demo.py) (CLI driver)
+
+Logs (auto-generated, gitignored):
+- `logs/extraction.jsonl`, `logs/extraction_llm.jsonl`
+- `logs/elicitation.jsonl`
+- `logs/retrieval.jsonl`
+- `logs/synthesis.jsonl`

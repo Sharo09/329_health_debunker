@@ -1,3 +1,7 @@
+from src.elicitation.adaptive_elicitor import (
+    AdaptiveElicitationAgent,
+    ProbeSlice,
+)
 from src.elicitation.elicitor import ElicitationAgent
 from src.elicitation.errors import (
     ElicitationError,
@@ -19,6 +23,7 @@ from src.elicitation.question_templates import (
 from src.elicitation.ui_adapter import CLIAdapter, StreamlitAdapter, UIAdapter
 
 __all__ = [
+    "AdaptiveElicitationAgent",
     "CLIAdapter",
     "DEFAULT_PRIORITY",
     "DIMENSION_PRIORITY",
@@ -27,6 +32,7 @@ __all__ = [
     "FALLBACK_VALUE",
     "GENERIC_TEMPLATES",
     "InsufficientElicitationError",
+    "ProbeSlice",
     "QUESTION_TEMPLATES",
     "QuestionTemplate",
     "StreamlitAdapter",
