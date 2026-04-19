@@ -5,4 +5,4 @@ python-dotenv
 requests
 tenacity
 rapidfuzz
-google-generativeai
+google-genai
