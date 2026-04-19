@@ -15,9 +15,9 @@ import pytest
 
 from src.extraction.llm_client import LLMClient
 from src.retrieval.agent_llm import ScriptedAgentLLM, ToolCall
-from src.retrieval.concept_query_builder import QueryBuilder
+from src.retrieval.query_builder import QueryBuilder
 from src.retrieval.concept_resolver import ConceptResolver
-from src.retrieval.retrieval_agent_new import RetrievalAgent
+from src.retrieval.retrieval_agent import RetrievalAgent
 from src.retrieval.schemas import ESearchResult
 from src.schemas import PartialPICO
 
@@ -107,7 +107,7 @@ def test_integration_orange_flu(tmp_path):
         '"Adult"[MeSH Terms]': ([], 1_000_000),
     })
 
-    resolver = ConceptResolver(resolver_llm, pubmed)
+    resolver = ConceptResolver(resolver_llm, pubmed, max_workers=1)  # serial so mock-response order matches slot order
 
     agent_llm = ScriptedAgentLLM([
         ToolCall("plan_query", {"slots": ["food", "outcome"]}),
@@ -178,7 +178,7 @@ def test_integration_turmeric_inflammation(tmp_path):
         '"Adult"[MeSH Terms]': ([], 1_000_000),
         "Curcuma": ([f"t{i}" for i in range(32)], 400),
     })
-    resolver = ConceptResolver(resolver_llm, pubmed)
+    resolver = ConceptResolver(resolver_llm, pubmed, max_workers=1)  # serial so mock-response order matches slot order
 
     agent_llm = ScriptedAgentLLM([
         ToolCall("plan_query", {"slots": ["food", "outcome"]}),
@@ -222,7 +222,7 @@ def test_integration_coffee_pregnancy(tmp_path):
         '"Pregnant Women"[MeSH Terms]': ([], 120000),
         "Coffee": ([f"c{i}" for i in range(22)], 180),
     })
-    resolver = ConceptResolver(resolver_llm, pubmed)
+    resolver = ConceptResolver(resolver_llm, pubmed, max_workers=1)  # serial so mock-response order matches slot order
 
     agent_llm = ScriptedAgentLLM([
         ToolCall("plan_query", {"slots": ["food", "outcome"]}),
@@ -262,7 +262,7 @@ def test_integration_red_meat_cancer(tmp_path):
         '"Adult"[MeSH Terms]': ([], 1_000_000),
         "Red Meat": ([f"r{i}" for i in range(40)], 600),
     })
-    resolver = ConceptResolver(resolver_llm, pubmed)
+    resolver = ConceptResolver(resolver_llm, pubmed, max_workers=1)  # serial so mock-response order matches slot order
 
     agent_llm = ScriptedAgentLLM([
         ToolCall("plan_query", {"slots": ["food", "outcome"]}),
@@ -301,7 +301,7 @@ def test_integration_vitamin_d_covid_min_year(tmp_path):
         '"Adult"[MeSH Terms]': ([], 1_000_000),
         "Vitamin D": ([f"vd{i}" for i in range(25)], 300),
     })
-    resolver = ConceptResolver(resolver_llm, pubmed)
+    resolver = ConceptResolver(resolver_llm, pubmed, max_workers=1)  # serial so mock-response order matches slot order
 
     agent_llm = ScriptedAgentLLM([
         ToolCall("plan_query", {"slots": ["food", "outcome"], "min_year": 2020}),
@@ -339,7 +339,7 @@ def test_mechanism_query_skipped_when_no_component(tmp_path):
         '"Inflammation"[MeSH Terms]': ([], 500000),
         "Curcuma": ([f"t{i}" for i in range(22)], 220),
     })
-    resolver = ConceptResolver(resolver_llm, pubmed)
+    resolver = ConceptResolver(resolver_llm, pubmed, max_workers=1)  # serial so mock-response order matches slot order
 
     agent_llm = ScriptedAgentLLM([
         ToolCall("plan_query", {"slots": ["component", "outcome"]}),   # nothing to build

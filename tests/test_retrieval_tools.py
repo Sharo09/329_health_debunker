@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.retrieval.agent_state import AgentState
-from src.retrieval.concept_query_builder import QueryBuilder
+from src.retrieval.query_builder import QueryBuilder
 from src.retrieval.retrieval_tools import TOOL_DECLARATIONS, RetrievalTools
 from src.retrieval.schemas import Concept, ESearchResult
 from src.schemas import PartialPICO

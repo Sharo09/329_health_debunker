@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.retrieval.agent_llm import ScriptedAgentLLM, Stop, ToolCall
-from src.retrieval.concept_query_builder import QueryBuilder
-from src.retrieval.retrieval_agent_new import RetrievalAgent
+from src.retrieval.query_builder import QueryBuilder
+from src.retrieval.retrieval_agent import RetrievalAgent
 from src.retrieval.schemas import (
     CAERSReport,
     Concept,

@@ -486,7 +486,7 @@ def finalize_claim(req: FinalizeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrieval failed: {e}")
 
-    # RetrievalResultV2 uses different fields than Sharon's legacy API.
+    # RetrievalResult uses different fields than Sharon's legacy API.
     # Translate them into the frontend's existing ``FinalizeResponse`` shape
     # so her React code works unchanged.
     papers_out = [

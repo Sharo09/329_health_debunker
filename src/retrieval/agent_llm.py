@@ -5,7 +5,7 @@ Two implementations:
   - ``ScriptedAgentLLM`` — deterministic test double that replays
                             pre-baked tool calls
 
-The agent loop in ``retrieval_agent_new.py`` talks to this interface
+The agent loop in ``retrieval_agent.py`` talks to this interface
 only, so the loop is LLM-vendor agnostic and unit-testable without any
 network calls.
 """

@@ -1,138 +1,33 @@
-"""Converts a ``LockedPICO`` into a PubMed E-utilities query string.
+"""Concept-based PubMed query builder (retrieval spec Task 4).
 
-PubMed query syntax:
-    term[Field]  — e.g. "curcumin"[MeSH Terms], "inflammation"[tiab]
-    AND / OR / NOT (uppercase)
-    Parentheses group sub-expressions.
+Turns a dict of resolved ``Concept`` objects into Boolean PubMed queries.
+Replaces the old string-concatenation builder that produced broken
+queries like ``"orange"[MeSH Terms]`` (the colour, not the fruit).
 
-Design
-------
-The builder supports six relaxation levels. The agent tries each in order
-until the result count passes the minimum threshold:
+The builder is the **single source of truth for PubMed query syntax**.
+The retrieval agent never constructs raw query strings — it composes
+concepts and calls into this module.
 
-    FULL           food + component + outcome + population + form
-    DROP_FORM      drop form and frequency terms
-    DROP_POPULATION  drop population filter
-    CORE           food / component + outcome only
-    MESH_ONLY      MeSH-controlled terms only (no free-text [tiab])
-    BROAD          single food term + outcome, no filters at all
+Kept in its own file so Sharon's legacy ``query_builder.py`` and her
+``retrieval_agent.py`` keep working until Task 6 consolidates.
 """
 
 from __future__ import annotations
 
-import logging
-from enum import IntEnum
+import re
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Relaxation levels
-# ---------------------------------------------------------------------------
-
-class RelaxationLevel(IntEnum):
-    FULL = 0
-    DROP_FORM = 1
-    DROP_POPULATION = 2
-    CORE = 3
-    MESH_ONLY = 4
-    BROAD = 5
-
+from src.retrieval.schemas import Concept
 
 # ---------------------------------------------------------------------------
-# Lookup tables
+# Study-design tiers → PubMed publication types
 # ---------------------------------------------------------------------------
 
-# Maps canonical food names (lowercase) to lists of PubMed search terms.
-# Station 1's food_normalizer ensures the food field is already canonical.
-FOOD_SYNONYMS: dict[str, list[str]] = {
-    "turmeric":              ["turmeric", "curcuma longa", "curcumin"],
-    "coffee":                ["coffee", "coffea", "caffeine"],
-    "red meat":              ["red meat", "beef", "pork", "lamb", "processed meat"],
-    "eggs":                  ["eggs", "egg consumption", "dietary cholesterol"],
-    "alcohol":               ["alcohol", "ethanol", "alcoholic beverages"],
-    "vitamin d":             ["vitamin D", "cholecalciferol", "ergocalciferol"],
-    "intermittent fasting":  ["intermittent fasting", "time-restricted eating",
-                              "alternate day fasting"],
-    "artificial sweeteners": ["artificial sweeteners", "non-nutritive sweeteners",
-                              "saccharin", "aspartame", "sucralose"],
-    "added sugar":           ["added sugar", "sucrose", "fructose",
-                              "high-fructose corn syrup"],
-    "dairy milk":            ["dairy milk", "cow's milk", "milk consumption", "lactose"],
-}
-
-# Maps population slot values → PubMed MeSH filter.
-# Station 2 stores values with underscores (e.g. "healthy_adults"); we
-# normalise by replacing underscores with spaces before lookup.
-POPULATION_MESH: dict[str, str] = {
-    "healthy adults":               "adult[MeSH Terms]",
-    "healthy replete":              "adult[MeSH Terms]",
-    "elderly":                      "aged[MeSH Terms]",
-    "older adults (65+)":           "aged[MeSH Terms]",
-    "pregnant":                     "pregnant women[MeSH Terms]",
-    "pregnant or breastfeeding":    "pregnant women[MeSH Terms]",
-    "pregnant women":               "pregnant women[MeSH Terms]",
-    "children":                     "child[MeSH Terms]",
-    "infants":                      "infant[MeSH Terms]",
-    "adolescents":                  "adolescent[MeSH Terms]",
-    "athletes":                     "athletes[tiab]",
-    "obese":                        "obesity[MeSH Terms]",
-    "diabetic":                     "diabetes mellitus[MeSH Terms]",
-    "hypercholesterolemia":         "hypercholesterolemia[MeSH Terms]",
-    "deficient":                    "vitamin d deficiency[MeSH Terms]",
-    "lactose intolerant":           "lactose intolerance[MeSH Terms]",
-    "cardiovascular patients":      "cardiovascular diseases[MeSH Terms]",
-    "liver patients":               "liver diseases[MeSH Terms]",
-    "inflammatory patients":        "arthritis[MeSH Terms] OR inflammatory bowel diseases[MeSH Terms] OR autoimmune diseases[MeSH Terms]",
-    "people with arthritis or inflammatory disease":
-                                    "arthritis[MeSH Terms]",
-    "condition":                    "",  # generic "someone with a condition" → no useful filter
-}
-
-# Maps outcome slot values (Station 2 emits underscored tokens) → PubMed
-# expression. Unknown outcomes fall back to the underscore-normalised
-# free-text form in _outcome_block.
-OUTCOME_MESH: dict[str, str] = {
-    "cardiovascular_disease":   '"cardiovascular diseases"[MeSH Terms] OR "cardiovascular diseases"[tiab]',
-    "cancer":                   '"neoplasms"[MeSH Terms] OR "cancer"[tiab]',
-    "colorectal_cancer":        '"colorectal neoplasms"[MeSH Terms] OR "colorectal cancer"[tiab]',
-    "type_2_diabetes":          '"diabetes mellitus, type 2"[MeSH Terms] OR "type 2 diabetes"[tiab]',
-    "glucose_metabolism":       '"blood glucose"[MeSH Terms] OR "insulin resistance"[MeSH Terms]',
-    "bone_health":              '"bone density"[MeSH Terms] OR "osteoporosis"[MeSH Terms]',
-    "liver_health":             '"liver diseases"[MeSH Terms]',
-    "liver_disease":            '"liver diseases"[MeSH Terms]',
-    "fatty_liver":              '"non-alcoholic fatty liver disease"[MeSH Terms]',
-    "dental_caries":            '"dental caries"[MeSH Terms]',
-    "fetal_outcomes":           '"fetal development"[MeSH Terms] OR "pregnancy outcome"[MeSH Terms]',
-    "pregnancy_outcomes":       '"pregnancy outcome"[MeSH Terms]',
-    "sleep_anxiety":            '"sleep"[MeSH Terms] OR "anxiety"[MeSH Terms]',
-    "weight_loss":              '"weight loss"[MeSH Terms]',
-    "weight_gain":              '"weight gain"[MeSH Terms] OR "obesity"[MeSH Terms]',
-    "allergy_gi":               '"food hypersensitivity"[MeSH Terms]',
-    "growth_development":       '"child development"[MeSH Terms] OR "growth"[MeSH Terms]',
-    "microbiome":               '"gastrointestinal microbiome"[MeSH Terms]',
-    # Passthroughs — these already read as real MeSH/free-text terms.
-    "inflammation":             '"inflammation"[MeSH Terms] OR "inflammation"[tiab]',
-    "arthritis":                '"arthritis"[MeSH Terms]',
-    "cholesterol":              '"cholesterol"[MeSH Terms]',
-    "cognition":                '"cognition"[MeSH Terms]',
-    "mortality":                '"mortality"[MeSH Terms]',
-    "longevity":                '"longevity"[MeSH Terms]',
-}
-
-# Maps form slot values → lists of PubMed [tiab] terms.
-# Station 2's question_templates determine the exact strings stored here.
-FORM_TERMS: dict[str, list[str]] = {
-    "supplement":                   ["supplement[tiab]", "capsule[tiab]", "extract[tiab]"],
-    "dietary":                      ["dietary[tiab]", "food[tiab]", "consumption[tiab]"],
-    "extract":                      ["extract[tiab]", "standardized extract[tiab]"],
-    # Values as stored by Station 2 question templates:
-    "as a spice in food (typical culinary amounts)":
-                                    ["dietary[tiab]", "food intake[tiab]", "culinary[tiab]"],
-    "as a curcumin supplement (standardized extract pills)":
-                                    ["supplement[tiab]", "curcumin[tiab]", "extract[tiab]"],
-    "turmeric tea or golden milk":  ["turmeric tea[tiab]", "golden milk[tiab]"],
+STUDY_TYPES_BY_TIER: dict[int, list[str]] = {
+    1: ["systematic review", "meta-analysis"],
+    2: ["randomized controlled trial"],
+    3: ["observational study", "cohort studies", "case-control studies"],
+    4: [],  # no filter at this tier — everything is allowed
 }
 
 
@@ -141,129 +36,188 @@ FORM_TERMS: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 class QueryBuilder:
-    """Translates a ``LockedPICO`` (flat string fields) into a PubMed query."""
+    """Translate resolved concepts into PubMed Boolean query strings.
 
-    def build(self, pico, level: RelaxationLevel) -> str:
+    All ``build_*`` methods accept a dict of ``Concept`` objects keyed by
+    slot name (``"food"``, ``"outcome"``, ``"component"``, ``"population"``).
+    """
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def build_direct_query(
+        self,
+        concepts: dict[str, Concept],
+        include_filters: bool = True,
+        min_year: Optional[int] = None,
+        population_as_filter: bool = True,
+    ) -> str:
+        """Primary query: food AND outcome, plus optional filters.
+
+        Raises ``ValueError`` if neither food nor outcome is resolvable.
         """
-        Return a PubMed query string for the given relaxation level.
-
-        Parameters
-        ----------
-        pico  : LockedPICO  (from src.schemas)
-        level : RelaxationLevel
-
-        Raises
-        ------
-        ValueError  if neither a food block nor an outcome block can be built.
-        """
-        parts: list[str] = []
-
-        food_block = self._food_block(pico, level)
-        if food_block:
-            parts.append(food_block)
-
-        outcome_block = self._outcome_block(pico)
-        if outcome_block:
-            parts.append(outcome_block)
-
-        if not parts:
+        food = concepts.get("food")
+        outcome = concepts.get("outcome")
+        if not _has_terms(food) and not _has_terms(outcome):
             raise ValueError(
-                "Cannot build any PubMed query: LockedPICO has no food and no outcome."
+                "Cannot build direct query: need at least one of food or outcome."
             )
-
-        # Form filter — kept only at FULL. DROP_FORM and beyond omit it.
-        if level < RelaxationLevel.DROP_FORM:
-            form_block = self._form_block(pico)
-            if form_block:
-                parts.append(form_block)
-
-        # Population filter — kept at FULL and DROP_FORM. DROP_POPULATION omits it.
-        if level < RelaxationLevel.DROP_POPULATION:
-            pop_block = self._population_block(pico)
-            if pop_block:
-                parts.append(pop_block)
-
-        # Human filter — all levels except BROAD
-        if level < RelaxationLevel.BROAD:
-            parts.append("humans[MeSH Terms]")
-
-        # English filter — only at the stricter levels
-        if level <= RelaxationLevel.DROP_POPULATION:
-            parts.append("English[Language]")
-
-        return " AND ".join(
-            f"({p})" if (" OR " in p or " AND " in p) else p
-            for p in parts
+        return self._assemble(
+            food, outcome,
+            population=concepts.get("population") if population_as_filter else None,
+            include_filters=include_filters,
+            min_year=min_year,
         )
 
-    # --- sub-builders ---
+    def build_mechanism_query(
+        self,
+        concepts: dict[str, Concept],
+        include_filters: bool = True,
+        min_year: Optional[int] = None,
+        population_as_filter: bool = True,
+    ) -> Optional[str]:
+        """Mechanism query: component AND outcome.
 
-    def _food_block(self, pico, level: RelaxationLevel) -> Optional[str]:
+        Returns ``None`` if no component concept was resolved — this is
+        the explicit signal the retrieval agent uses to decide whether
+        the mechanism strategy is available.
         """
-        Build the food/component OR-block.
+        component = concepts.get("component")
+        outcome = concepts.get("outcome")
+        if not _has_terms(component) or not _has_terms(outcome):
+            return None
+        return self._assemble(
+            component, outcome,
+            population=concepts.get("population") if population_as_filter else None,
+            include_filters=include_filters,
+            min_year=min_year,
+        )
 
-        At MESH_ONLY level we suppress [tiab] terms to force the query
-        through the controlled MeSH vocabulary. This often recovers results
-        when free-text searches are too noisy.
+    def build_related_outcome_query(
+        self,
+        concepts: dict[str, Concept],
+        related_outcome: Concept,
+        include_filters: bool = True,
+        min_year: Optional[int] = None,
+        population_as_filter: bool = True,
+    ) -> str:
+        """Food AND a semantically-related outcome concept.
+
+        Used for *semantic* relaxation. For orange/flu, a related outcome
+        might be "Common Cold" or "Upper Respiratory Tract Infections".
         """
-        terms: list[str] = []
-        food_key = (pico.food or "").strip().lower()
-        synonyms = FOOD_SYNONYMS.get(food_key, [pico.food] if pico.food else [])
+        food = concepts.get("food")
+        if not _has_terms(food):
+            raise ValueError("Cannot build related-outcome query: food is required.")
+        if not _has_terms(related_outcome):
+            raise ValueError("Cannot build related-outcome query: related_outcome has no terms.")
+        return self._assemble(
+            food, related_outcome,
+            population=concepts.get("population") if population_as_filter else None,
+            include_filters=include_filters,
+            min_year=min_year,
+        )
 
-        for syn in synonyms:
-            terms.append(f'"{syn}"[MeSH Terms]')
-            if level != RelaxationLevel.MESH_ONLY:
-                terms.append(f'"{syn}"[tiab]')
+    def build_study_type_filter(self, tiers: list[int]) -> str:
+        """Return an OR-block matching any publication type in the given tiers.
 
-        # Add explicit component (e.g. "curcumin") if Station 2 filled it in
-        # and it's not already covered by the synonym list.
-        if pico.component:
-            comp = pico.component.strip().lower()
-            already_covered = any(comp in s.lower() for s in synonyms)
-            if not already_covered:
-                terms.append(f'"{pico.component}"[MeSH Terms]')
-                if level != RelaxationLevel.MESH_ONLY:
-                    terms.append(f'"{pico.component}"[tiab]')
+        Empty tiers or unrecognised tiers simply contribute no clause.
+        Returns an empty string when no study-type filter should be applied.
+        """
+        pub_types: list[str] = []
+        for tier in tiers:
+            pub_types.extend(STUDY_TYPES_BY_TIER.get(tier, []))
+        if not pub_types:
+            return ""
+        clauses = [f'"{pt}"[Publication Type]' for pt in pub_types]
+        return _or_group(clauses)
 
-        if not terms:
-            return None
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
 
-        # De-duplicate while preserving insertion order
-        seen: set[str] = set()
-        unique = [t for t in terms if not (t in seen or seen.add(t))]
-        return " OR ".join(unique)
+    def _assemble(
+        self,
+        left: Optional[Concept],
+        right: Optional[Concept],
+        population: Optional[Concept],
+        include_filters: bool,
+        min_year: Optional[int],
+    ) -> str:
+        parts: list[str] = []
+        left_block = _concept_block(left)
+        right_block = _concept_block(right)
+        if left_block:
+            parts.append(left_block)
+        if right_block:
+            parts.append(right_block)
 
-    def _outcome_block(self, pico) -> Optional[str]:
-        if not pico.outcome:
-            return None
-        raw = pico.outcome.strip()
-        # Station 2 emits underscored tokens like "cardiovascular_disease".
-        # Prefer a curated MeSH mapping; fall back to underscore→space free text.
-        mapped = OUTCOME_MESH.get(raw.lower())
-        if mapped:
-            return mapped
-        display = raw.replace("_", " ")
-        return f'"{display}"[MeSH Terms] OR "{display}"[tiab]'
+        # Population, when available, goes in as an extra filter term.
+        if population is not None and _has_terms(population):
+            parts.append(_concept_block(population))
 
-    def _form_block(self, pico) -> Optional[str]:
-        if not pico.form:
-            return None
-        form_key = pico.form.strip().lower()
-        terms = FORM_TERMS.get(form_key)
-        if terms:
-            return " OR ".join(terms)
-        # Unknown form value: fall back to free-text search
-        logger.debug("Unknown form value %r; using free-text fallback.", pico.form)
-        return f'"{pico.form}"[tiab]'
+        if include_filters:
+            parts.append("humans[Filter]")
+            parts.append("English[Language]")
 
-    def _population_block(self, pico) -> Optional[str]:
-        if not pico.population:
-            return None
-        # Station 2 stores underscores (e.g. "healthy_adults"); normalise.
-        pop_key = pico.population.strip().lower().replace("_", " ")
-        if pop_key in POPULATION_MESH:
-            mesh = POPULATION_MESH[pop_key]
-            return mesh if mesh else None   # empty string means "no useful filter"
-        # Free-text fallback for populations not in our lookup table
-        logger.debug("Unknown population %r; using free-text fallback.", pico.population)
-        return f'"{pico.population.replace("_", " ")}"[tiab]'
+        if min_year is not None:
+            parts.append(
+                f'("{min_year}"[Date - Publication] : "3000"[Date - Publication])'
+            )
+
+        return " AND ".join(p for p in parts if p)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _has_terms(concept: Optional[Concept]) -> bool:
+    if concept is None:
+        return False
+    return bool(concept.mesh_terms) or bool(concept.tiab_synonyms)
+
+
+def _concept_block(concept: Optional[Concept]) -> str:
+    """Build ``((mesh_1[MeSH] OR mesh_2[MeSH]) OR (syn_1[tiab] OR syn_2[tiab]))``."""
+    if concept is None:
+        return ""
+
+    mesh_clauses = [
+        f'"{_escape(m)}"[MeSH Terms]' for m in concept.mesh_terms if m and m.strip()
+    ]
+    tiab_clauses = [
+        f'"{_escape(s)}"[tiab]' for s in concept.tiab_synonyms if s and s.strip()
+    ]
+
+    groups: list[str] = []
+    if mesh_clauses:
+        groups.append(_or_group(mesh_clauses))
+    if tiab_clauses:
+        groups.append(_or_group(tiab_clauses))
+
+    if not groups:
+        return ""
+    if len(groups) == 1:
+        return groups[0]
+    return "(" + " OR ".join(groups) + ")"
+
+
+def _or_group(clauses: list[str]) -> str:
+    """Parenthesise an OR-joined group. Single clauses need no extra parens."""
+    if len(clauses) == 1:
+        return clauses[0]
+    return "(" + " OR ".join(clauses) + ")"
+
+
+# Characters that would break PubMed's quoted phrase parser.
+_BAD_CHARS_RE = re.compile(r'[\[\]"]')
+
+
+def _escape(term: str) -> str:
+    """Strip characters that break PubMed's quoted-phrase grammar."""
+    # We quote with double quotes (`"term"`). Any brackets or embedded quotes
+    # inside `term` would break the grammar. Strip them — losing precision on
+    # exotic terms is better than producing a syntactically-invalid query.
+    return _BAD_CHARS_RE.sub("", term).strip()

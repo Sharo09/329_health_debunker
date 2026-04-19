@@ -50,7 +50,7 @@ from src.retrieval.errors import (
     PubMedParseError,
     PubMedRateLimitError,
 )
-from src.retrieval.schemas import ESearchResult, Paper
+from src.retrieval.schemas import ESearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -177,21 +177,6 @@ class PubMedClient:
             if "Retracted Publication" in record.get("pub_types", []):
                 retracted.add(record["pmid"])
         return retracted
-
-    # ------------------------------------------------------------------
-    # Public API — legacy shims (used by Sharon's existing agent)
-    # ------------------------------------------------------------------
-
-    def search(
-        self, query: str, max_results: int = 100
-    ) -> tuple[list[str], int]:
-        """Legacy two-tuple return. Prefer ``esearch()`` for new code."""
-        result = self.esearch(query, max_results=max_results)
-        return result.pmids, result.total_count
-
-    def fetch(self, pmids: list[str]) -> list[Paper]:
-        """Legacy ``Paper`` list return. Prefer ``fetch_details()``."""
-        return [self._record_to_paper(r) for r in self.fetch_details(pmids)]
 
     # ------------------------------------------------------------------
     # Cache helpers
@@ -412,27 +397,6 @@ class PubMedClient:
             else:
                 parts.append(text)
         return "\n".join(parts)
-
-    # ------------------------------------------------------------------
-    # Legacy Paper conversion
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _record_to_paper(record: dict) -> Paper:
-        return Paper(
-            pmid=record["pmid"],
-            title=record.get("title", ""),
-            abstract=record.get("abstract", ""),
-            authors=list(record.get("authors", [])),
-            journal=record.get("journal", ""),
-            pub_year=record.get("year"),
-            pub_types=list(record.get("pub_types", [])),
-            mesh_terms=list(record.get("mesh_terms", [])),
-            doi=record.get("doi"),
-            is_retracted="Retracted Publication" in record.get("pub_types", []),
-            language=record.get("language", "eng"),
-        )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

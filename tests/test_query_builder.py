@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.retrieval.concept_query_builder import (
+from src.retrieval.query_builder import (
     QueryBuilder,
     _concept_block,
     _escape,

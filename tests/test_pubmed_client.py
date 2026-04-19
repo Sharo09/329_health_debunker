@@ -456,28 +456,3 @@ def test_no_api_key_param_when_none_set():
     assert "api_key" not in kwargs["params"]
 
 
-# ---------------------------------------------------------------------------
-# Legacy shims still work (Sharon's retrieval_agent.py depends on these)
-# ---------------------------------------------------------------------------
-
-def test_legacy_search_returns_tuple():
-    session = _mock_session(
-        _make_response(200, {"esearchresult": {"idlist": ["a", "b"], "count": "9"}})
-    )
-    client = _client(session)
-    pmids, total = client.search("x", max_results=2)
-    assert pmids == ["a", "b"]
-    assert total == 9
-
-
-def test_legacy_fetch_returns_paper_objects():
-    session = _mock_session(_make_response(200, _UNLABELED_ABSTRACT_XML))
-    client = _client(session)
-    papers = client.fetch(["1001"])
-    assert len(papers) == 1
-    p = papers[0]
-    assert p.pmid == "1001"
-    assert p.title == "Curcumin and inflammation"
-    assert p.pub_year == 2024
-    assert p.journal == "Some Journal"
-    assert p.is_retracted is False

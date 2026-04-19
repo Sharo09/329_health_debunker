@@ -28,8 +28,10 @@ RETRY_REMINDER = (
     "with no surrounding prose or markdown fences."
 )
 
-# Provider signature: (messages, response_schema, model, temperature) -> raw string.
-ProviderCallable = Callable[[list[dict], type[BaseModel], str, float], str]
+# Provider signature: (messages, response_schema, model, temperature, **kwargs) -> raw string.
+# ``kwargs`` carries optional per-call tuning (e.g. thinking_budget) so
+# adding features doesn't break test providers with the old 4-arg shape.
+ProviderCallable = Callable[..., str]
 
 
 def _default_gemini_provider(
@@ -37,14 +39,15 @@ def _default_gemini_provider(
     response_schema: type[BaseModel],
     model: str,
     temperature: float,
+    thinking_budget: Optional[int] = None,
 ) -> str:
     """Default provider — calls Gemini via the ``google-genai`` SDK.
 
     Picks up ``GOOGLE_API_KEY`` / ``GEMINI_API_KEY`` from the
-    environment automatically. The older ``google-generativeai``
-    package is deprecated and can't serialize pydantic schemas that
-    include default-valued fields; the new ``google-genai`` package
-    handles pydantic classes natively.
+    environment automatically. If ``thinking_budget`` is provided
+    (0 disables the internal reasoning pass on Gemini 2.5 Flash),
+    pass it through. Disabling thinking halves latency on mechanical
+    extraction tasks where the reasoning pass doesn't improve output.
     """
     try:
         from google import genai
@@ -68,6 +71,17 @@ def _default_gemini_provider(
 
     client = genai.Client()
 
+    config_kwargs: dict = dict(
+        temperature=temperature,
+        response_mime_type="application/json",
+        response_schema=response_schema,
+        system_instruction=system_instruction,
+    )
+    if thinking_budget is not None:
+        config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
+            thinking_budget=thinking_budget
+        )
+
     # Retry on 429 with Retry-After honoured — matters on the free tier
     # where the per-minute cap is tight (5 req/min on Flash).
     from src.retrieval._gemini_retry import call_with_429_retry
@@ -76,12 +90,7 @@ def _default_gemini_provider(
         lambda: client.models.generate_content(
             model=model,
             contents=contents,
-            config=genai_types.GenerateContentConfig(
-                temperature=temperature,
-                response_mime_type="application/json",
-                response_schema=response_schema,
-                system_instruction=system_instruction,
-            ),
+            config=genai_types.GenerateContentConfig(**config_kwargs),
         )
     )
     return response.text
@@ -94,11 +103,17 @@ class LLMClient:
         temperature: float = 0.0,
         log_file: Optional[str] = None,
         provider: Optional[ProviderCallable] = None,
+        thinking_budget: Optional[int] = None,
     ):
         self.model = model
         self.temperature = temperature
         self.log_file = log_file if log_file is not None else DEFAULT_LOG_FILE
         self._provider: ProviderCallable = provider or _default_gemini_provider
+        # ``thinking_budget``: Gemini 2.5 "thinking" is on by default and adds
+        # ~5-15s per call. Set to 0 to disable for mechanical extraction tasks
+        # (concept resolution, tool-selection in agents). Leave as ``None``
+        # to keep Gemini's default behaviour (thinking enabled on Flash).
+        self.thinking_budget = thinking_budget
 
     def extract(
         self,
@@ -119,8 +134,12 @@ class LLMClient:
             t0 = time.monotonic()
 
             try:
+                provider_kwargs: dict = {}
+                if self.thinking_budget is not None:
+                    provider_kwargs["thinking_budget"] = self.thinking_budget
                 raw = self._provider(
-                    current_messages, response_schema, self.model, self.temperature
+                    current_messages, response_schema, self.model, self.temperature,
+                    **provider_kwargs,
                 )
             except Exception as exc:
                 latency_ms = (time.monotonic() - t0) * 1000

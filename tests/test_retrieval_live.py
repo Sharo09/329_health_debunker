@@ -14,7 +14,7 @@ import os
 import pytest
 
 from src.retrieval.agent_llm import GeminiAgentLLM
-from src.retrieval.retrieval_agent_new import RetrievalAgent
+from src.retrieval.retrieval_agent import RetrievalAgent
 from src.schemas import PartialPICO
 
 

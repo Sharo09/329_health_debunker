@@ -21,7 +21,7 @@ from src.retrieval.agent_state import (
     AgentState,
     ExecutedQuery,
 )
-from src.retrieval.concept_query_builder import QueryBuilder
+from src.retrieval.query_builder import QueryBuilder
 from src.retrieval.concept_resolver import ConceptResolver
 from src.retrieval.pubmed_client import PubMedClient
 from src.retrieval.schemas import Concept
