@@ -6,15 +6,16 @@ export type TabId = "analyze" | "common" | "history" | "results" | "about";
 interface Tab {
   id: TabId;
   label: string;
+  shortLabel: string;
   icon: typeof Search;
 }
 
 const tabs: Tab[] = [
-  { id: "analyze", label: "Analyze Claim", icon: Search },
-  { id: "common", label: "Common Claims", icon: FileText },
-  { id: "history", label: "History", icon: History },
-  { id: "results", label: "Results", icon: BookOpen },
-  { id: "about", label: "About", icon: Info },
+  { id: "analyze", label: "Analyze Claim", shortLabel: "Analyze", icon: Search },
+  { id: "common", label: "Common Claims", shortLabel: "Claims", icon: FileText },
+  { id: "history", label: "History", shortLabel: "History", icon: History },
+  { id: "results", label: "Results", shortLabel: "Results", icon: BookOpen },
+  { id: "about", label: "About", shortLabel: "About", icon: Info },
 ];
 
 interface TabsProps {
@@ -26,7 +27,7 @@ interface TabsProps {
 function Tabs({ activeTab, onTabChange, hasResults }: TabsProps) {
   return (
     <nav className="bg-surface border-b border-border sticky top-0 z-10">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex gap-1 overflow-x-auto scrollbar-hide -mb-px">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -39,7 +40,7 @@ function Tabs({ activeTab, onTabChange, hasResults }: TabsProps) {
                 onClick={() => !isDisabled && onTabChange(tab.id)}
                 disabled={isDisabled}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-all duration-200 border-b-2 -mb-px",
+                  "flex items-center gap-2 px-4 py-3.5 text-sm font-medium whitespace-nowrap transition-all duration-200 border-b-2 -mb-px",
                   isActive
                     ? "text-primary border-primary"
                     : "text-foreground-muted border-transparent hover:text-foreground hover:border-border",
@@ -48,6 +49,7 @@ function Tabs({ activeTab, onTabChange, hasResults }: TabsProps) {
               >
                 <Icon className="w-4 h-4" />
                 <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.shortLabel}</span>
               </button>
             );
           })}

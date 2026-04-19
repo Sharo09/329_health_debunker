@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ArrowLeft, FileText, ChevronDown, ChevronUp, BookOpen, AlertCircle, Beaker, RotateCcw } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, BookOpen, RotateCcw } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent } from "../ui/Card";
 import { Badge } from "../ui/Badge";
 import { Alert } from "../ui/Alert";
-import { Spinner } from "../ui/Spinner";
+import { LoadingScreen } from "../ui/LoadingScreen";
 import { VerdictCard, DemographicCaveat } from "../results/VerdictCard";
 import { CitedPaperCard, RawPaperCard } from "../results/PaperCard";
 import { cn } from "../../lib/utils";
@@ -64,39 +64,39 @@ function ResultsTab({
   return (
     <div className="animate-fade-in max-w-3xl mx-auto space-y-6">
       {/* Claim Header */}
-      <Card>
-        <CardContent className="p-5">
-          <div className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">
+      <Card className="border-0 bg-surface-muted rounded-2xl">
+        <CardContent className="p-6">
+          <div className="text-xs font-medium tracking-widest text-foreground-muted uppercase mb-2">
             Your Claim
           </div>
-          <p className="text-lg font-semibold text-foreground mb-4">
+          <p className="text-xl font-serif text-foreground mb-4">
             &quot;{claim}&quot;
           </p>
 
           {lockedPico && (
             <div className="flex flex-wrap gap-2">
               {lockedPico.food && (
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                <Badge variant="outline" className="bg-surface text-primary border-primary/30">
                   Food: {lockedPico.food}
                 </Badge>
               )}
               {lockedPico.component && (
-                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                <Badge variant="outline" className="bg-surface text-primary border-primary/30">
                   Component: {lockedPico.component}
                 </Badge>
               )}
               {lockedPico.outcome && (
-                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                <Badge variant="outline" className="bg-surface text-mixed border-mixed/30">
                   Outcome: {lockedPico.outcome}
                 </Badge>
               )}
               {lockedPico.population && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                <Badge variant="outline" className="bg-surface text-foreground-muted border-border">
                   Population: {lockedPico.population}
                 </Badge>
               )}
               {lockedPico.form && (
-                <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300">
+                <Badge variant="outline" className="bg-surface text-foreground-muted border-border">
                   Form: {lockedPico.form}
                 </Badge>
               )}
@@ -112,14 +112,10 @@ function ResultsTab({
 
       {/* Verdict Loading */}
       {verdictLoading && !verdict && (
-        <Card className="border-dashed">
-          <CardContent className="p-8 text-center">
-            <Spinner 
-              message={`Synthesizing verdict from ${papers.length} paper${papers.length === 1 ? "" : "s"}...`}
-              submessage="~20-30 seconds. You can read the papers below while this runs."
-            />
-          </CardContent>
-        </Card>
+        <LoadingScreen 
+          message="Synthesizing Evidence..."
+          submessage={`Analyzing ${papers.length} paper${papers.length === 1 ? "" : "s"} for verdict`}
+        />
       )}
 
       {/* Verdict Error */}
@@ -148,7 +144,7 @@ function ResultsTab({
                     key={tab.key}
                     onClick={() => setStanceTab(tab.key)}
                     className={cn(
-                      "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors",
+                      "flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 -mb-px transition-colors",
                       isActive
                         ? "text-foreground border-primary"
                         : "text-foreground-muted border-transparent hover:text-foreground hover:border-border"
@@ -157,8 +153,8 @@ function ResultsTab({
                     {tab.label}
                     <span
                       className={cn(
-                        "px-2 py-0.5 rounded-full text-xs font-semibold",
-                        isActive ? `${tab.color} text-white` : "bg-muted text-foreground-muted"
+                        "px-2.5 py-0.5 rounded-full text-xs font-semibold",
+                        isActive ? `${tab.color} text-surface` : "bg-surface-muted text-foreground-muted"
                       )}
                     >
                       {tab.papers.length}
@@ -169,11 +165,11 @@ function ResultsTab({
             </div>
 
             {/* Papers List */}
-            <div className="mt-4 space-y-3">
+            <div className="mt-5 space-y-3">
               {activeStance && activeStance.papers.length === 0 ? (
-                <Card className="bg-muted border-0">
-                  <CardContent className="p-6 text-center">
-                    <BookOpen className="w-8 h-8 text-foreground-subtle mx-auto mb-2" />
+                <Card className="bg-surface-muted border-0 rounded-2xl">
+                  <CardContent className="p-8 text-center">
+                    <BookOpen className="w-10 h-10 text-foreground-subtle mx-auto mb-3" />
                     <p className="text-foreground-muted">
                       No {activeStance.label.toLowerCase()} papers cited in this verdict.
                     </p>
@@ -200,33 +196,33 @@ function ResultsTab({
       <div className="pt-4">
         <button
           onClick={() => setShowDetails(!showDetails)}
-          className="flex items-center gap-2 text-sm text-foreground-muted hover:text-foreground transition-colors"
+          className="flex items-center gap-2 text-sm font-medium text-foreground-muted hover:text-foreground transition-colors"
         >
           {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           Retrieval Details
         </button>
 
         {showDetails && (
-          <div className="mt-4 animate-fade-in">
+          <div className="mt-5 animate-fade-in">
             {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-4 mb-4">
-              <Card className="bg-muted border-0">
+            <div className="grid grid-cols-3 gap-4 mb-5">
+              <Card className="bg-surface-muted border-0 rounded-xl">
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-bold text-foreground">{papers.length}</div>
                   <div className="text-xs text-foreground-muted">Papers Retrieved</div>
                   <div className="text-xs text-foreground-subtle">of {totalHits} total</div>
                 </CardContent>
               </Card>
-              <Card className={cn("border-0", papers.some((p) => p.is_retracted) ? "bg-orange-50" : "bg-muted")}>
+              <Card className={cn("border-0 rounded-xl", papers.some((p) => p.is_retracted) ? "bg-mixed-bg" : "bg-surface-muted")}>
                 <CardContent className="p-4 text-center">
-                  <div className={cn("text-2xl font-bold", papers.some((p) => p.is_retracted) ? "text-orange-600" : "text-foreground")}>
+                  <div className={cn("text-2xl font-bold", papers.some((p) => p.is_retracted) ? "text-mixed" : "text-foreground")}>
                     {papers.filter((p) => p.is_retracted).length}
                   </div>
                   <div className="text-xs text-foreground-muted">Retracted</div>
                   <div className="text-xs text-foreground-subtle">flagged papers</div>
                 </CardContent>
               </Card>
-              <Card className="bg-muted border-0">
+              <Card className="bg-surface-muted border-0 rounded-xl">
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-bold text-foreground">
                     {papers.filter((p) => p.pub_types.some((t) => t.includes("Randomized"))).length}
@@ -238,9 +234,11 @@ function ResultsTab({
             </div>
 
             {/* Query Used */}
-            <div className="mb-4">
-              <div className="text-xs text-foreground-muted mb-2">PubMed Query (final)</div>
-              <code className="block bg-muted rounded-lg p-3 text-xs text-foreground-muted break-all leading-relaxed font-mono">
+            <div className="mb-5">
+              <div className="text-xs font-medium tracking-widest text-foreground-muted uppercase mb-2">
+                PubMed Query (final)
+              </div>
+              <code className="block bg-surface-muted rounded-xl p-4 text-xs text-foreground-muted break-all leading-relaxed font-mono">
                 {queryUsed || "—"}
               </code>
             </div>
@@ -250,7 +248,7 @@ function ResultsTab({
               <div>
                 <button
                   onClick={() => setShowAllPapers(!showAllPapers)}
-                  className="flex items-center gap-2 text-sm text-foreground-muted hover:text-foreground mb-3"
+                  className="flex items-center gap-2 text-sm font-medium text-foreground-muted hover:text-foreground mb-3"
                 >
                   {showAllPapers ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   All {papers.length} retrieved papers (pre-synthesis)
@@ -270,7 +268,7 @@ function ResultsTab({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-border">
+      <div className="flex flex-col sm:flex-row gap-3 pt-8 border-t border-border">
         <Button variant="outline" onClick={onNewClaim}>
           <ArrowLeft className="w-4 h-4" />
           New Claim

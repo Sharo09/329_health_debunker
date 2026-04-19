@@ -14,7 +14,9 @@ const verdictConfig = {
     icon: CheckCircle2,
     bg: "bg-supported-bg",
     border: "border-supported/30",
-    text: "text-green-800",
+    iconBg: "bg-supported/20",
+    iconColor: "text-supported",
+    textColor: "text-foreground",
     bar: "bg-supported",
   },
   contradicted: {
@@ -23,16 +25,20 @@ const verdictConfig = {
     icon: XCircle,
     bg: "bg-unsupported-bg",
     border: "border-unsupported/30",
-    text: "text-red-800",
+    iconBg: "bg-unsupported/20",
+    iconColor: "text-unsupported",
+    textColor: "text-foreground",
     bar: "bg-unsupported",
   },
   insufficient_evidence: {
     label: "Insufficient Evidence",
     description: "Not enough research to draw a firm conclusion",
     icon: HelpCircle,
-    bg: "bg-insufficient-bg",
-    border: "border-insufficient/30",
-    text: "text-gray-700",
+    bg: "bg-surface-muted",
+    border: "border-border",
+    iconBg: "bg-insufficient/10",
+    iconColor: "text-insufficient",
+    textColor: "text-foreground",
     bar: "bg-insufficient",
   },
 };
@@ -43,31 +49,31 @@ function VerdictCard({ verdict }: VerdictCardProps) {
   const confidence = Math.round(verdict.confidence_percent);
 
   return (
-    <Card className={cn("overflow-hidden", config.bg, config.border)}>
-      <CardContent className="p-6">
-        <div className="flex items-start gap-4">
-          <div className={cn("flex-shrink-0 p-2 rounded-xl", config.bg)}>
-            <Icon className={cn("w-8 h-8", config.text)} />
+    <Card className={cn("overflow-hidden rounded-2xl border-0", config.bg)}>
+      <CardContent className="p-8">
+        <div className="flex items-start gap-5">
+          <div className={cn("flex-shrink-0 p-3 rounded-2xl", config.iconBg)}>
+            <Icon className={cn("w-8 h-8", config.iconColor)} />
           </div>
           
           <div className="flex-1 min-w-0">
-            <div className={cn("text-xs font-semibold uppercase tracking-wider mb-1", config.text)}>
+            <div className="text-xs font-medium tracking-widest text-foreground-muted uppercase mb-2">
               Verdict
             </div>
-            <h3 className={cn("text-xl font-bold mb-1", config.text)}>
+            <h3 className={cn("text-2xl font-serif mb-2", config.textColor)}>
               {config.label}
             </h3>
-            <p className={cn("text-sm mb-4", config.text, "opacity-80")}>
+            <p className="text-sm text-foreground-muted mb-5">
               {config.description}
             </p>
 
             {/* Confidence Bar */}
-            <div className="mb-4">
-              <div className={cn("flex justify-between text-xs mb-1.5", config.text)}>
-                <span>Confidence Level</span>
-                <span className="font-semibold">{confidence}%</span>
+            <div className="mb-5">
+              <div className="flex justify-between text-xs mb-2">
+                <span className="text-foreground-muted">Confidence Level</span>
+                <span className="font-semibold text-foreground">{confidence}%</span>
               </div>
-              <div className="h-2 bg-black/10 rounded-full overflow-hidden">
+              <div className="h-2 bg-surface rounded-full overflow-hidden">
                 <div
                   className={cn("h-full rounded-full transition-all duration-700 ease-out", config.bar)}
                   style={{ width: `${confidence}%` }}
@@ -77,7 +83,7 @@ function VerdictCard({ verdict }: VerdictCardProps) {
 
             {/* Reasoning */}
             {verdict.verdict_reasoning && (
-              <p className={cn("text-sm leading-relaxed", config.text)}>
+              <p className="text-sm text-foreground-muted leading-relaxed">
                 {verdict.verdict_reasoning}
               </p>
             )}
@@ -90,14 +96,16 @@ function VerdictCard({ verdict }: VerdictCardProps) {
 
 function DemographicCaveat({ text }: { text: string }) {
   return (
-    <Card className="bg-mixed-bg border-mixed/30">
-      <CardContent className="p-4 flex items-start gap-3">
-        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+    <Card className="bg-mixed-bg border-0 rounded-2xl">
+      <CardContent className="p-5 flex items-start gap-4">
+        <div className="p-2 rounded-xl bg-mixed/20">
+          <AlertTriangle className="w-5 h-5 text-mixed" />
+        </div>
         <div>
-          <div className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1">
+          <div className="text-xs font-medium tracking-widest text-mixed uppercase mb-1">
             Demographic Note
           </div>
-          <p className="text-sm text-amber-800">{text}</p>
+          <p className="text-sm text-foreground-muted">{text}</p>
         </div>
       </CardContent>
     </Card>

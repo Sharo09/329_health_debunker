@@ -1,4 +1,4 @@
-import { History, Clock, ArrowRight, Trash2, Search } from "lucide-react";
+import { History, Clock, ChevronRight, Trash2, Search } from "lucide-react";
 import { Card, CardContent } from "../ui/Card";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -41,20 +41,20 @@ function HistoryTab({ history, onSelectEntry, onClearHistory, onNewClaim }: Hist
     return (
       <div className="animate-fade-in">
         {/* Empty State */}
-        <div className="text-center py-16">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-6">
-            <History className="w-8 h-8 text-foreground-muted" />
+        <div className="text-center py-20">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-surface-muted border border-border mb-6">
+            <History className="w-10 h-10 text-foreground-muted" />
           </div>
           
-          <h2 className="text-xl font-semibold text-foreground mb-3">
+          <h2 className="text-2xl font-serif text-foreground mb-3">
             No search history yet
           </h2>
           
-          <p className="text-foreground-muted max-w-md mx-auto mb-6">
+          <p className="text-foreground-muted max-w-md mx-auto mb-8">
             Your analyzed claims will appear here so you can easily revisit them later.
           </p>
           
-          <Button onClick={onNewClaim}>
+          <Button onClick={onNewClaim} size="lg">
             <Search className="w-4 h-4" />
             Analyze Your First Claim
           </Button>
@@ -64,11 +64,11 @@ function HistoryTab({ history, onSelectEntry, onClearHistory, onNewClaim }: Hist
   }
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in max-w-3xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-xl font-semibold text-foreground">Search History</h2>
+          <h2 className="text-2xl font-serif text-foreground">Search History</h2>
           <p className="text-sm text-foreground-muted mt-1">
             {history.length} claim{history.length === 1 ? "" : "s"} analyzed
           </p>
@@ -86,18 +86,18 @@ function HistoryTab({ history, onSelectEntry, onClearHistory, onNewClaim }: Hist
           const verdictDisplay = entry.verdict ? verdictConfig[entry.verdict] : null;
           
           return (
-            <Card key={entry.id} className="hover:shadow-md transition-shadow duration-200">
-              <CardContent className="p-4">
+            <Card key={entry.id} className="border-0 bg-surface-muted rounded-2xl hover:shadow-md transition-all duration-200">
+              <CardContent className="p-5">
                 <button
                   onClick={() => onSelectEntry(entry)}
                   className="w-full text-left flex items-start gap-4 group"
                 >
-                  <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-surface border border-border flex items-center justify-center">
                     <Clock className="w-5 h-5 text-foreground-muted" />
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground group-hover:text-primary truncate transition-colors">
+                    <p className="font-medium text-foreground group-hover:text-primary transition-colors line-clamp-2">
                       {entry.claim}
                     </p>
                     
@@ -116,7 +116,12 @@ function HistoryTab({ history, onSelectEntry, onClearHistory, onNewClaim }: Hist
                     </div>
                   </div>
                   
-                  <ArrowRight className="w-5 h-5 text-foreground-subtle group-hover:text-primary opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 mt-2" />
+                  <div className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200",
+                    "border border-border group-hover:border-primary group-hover:bg-primary"
+                  )}>
+                    <ChevronRight className="w-5 h-5 text-foreground-subtle group-hover:text-surface" />
+                  </div>
                 </button>
               </CardContent>
             </Card>
@@ -125,7 +130,7 @@ function HistoryTab({ history, onSelectEntry, onClearHistory, onNewClaim }: Hist
       </div>
 
       {/* Bottom hint */}
-      <p className="text-center text-xs text-foreground-subtle mt-8">
+      <p className="text-center text-xs text-foreground-subtle mt-10 py-4 border-t border-border">
         History is stored locally in your browser
       </p>
     </div>

@@ -20,18 +20,26 @@ function Alert({ className, variant = "info", children, ...props }: AlertProps) 
     <div
       role="alert"
       className={cn(
-        "flex items-start gap-3 p-4 rounded-lg text-sm",
+        "flex items-start gap-3 p-4 rounded-2xl text-sm",
         {
-          "bg-blue-50 text-blue-800 border border-blue-200": variant === "info",
-          "bg-mixed-bg text-amber-800 border border-amber-300": variant === "warning",
-          "bg-unsupported-bg text-red-800 border border-red-300": variant === "error",
-          "bg-supported-bg text-green-800 border border-green-300": variant === "success",
+          "bg-primary/10 text-foreground border-0": variant === "info",
+          "bg-mixed-bg text-foreground border-0": variant === "warning",
+          "bg-unsupported-bg text-foreground border-0": variant === "error",
+          "bg-supported-bg text-foreground border-0": variant === "success",
         },
         className
       )}
       {...props}
     >
-      <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+      <Icon className={cn(
+        "w-5 h-5 flex-shrink-0 mt-0.5",
+        {
+          "text-primary": variant === "info",
+          "text-mixed": variant === "warning",
+          "text-unsupported": variant === "error",
+          "text-supported": variant === "success",
+        }
+      )} />
       <div className="flex-1">{children}</div>
     </div>
   );

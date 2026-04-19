@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { ArrowLeft, ChevronRight, MessageSquare, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, CheckCircle2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent } from "../ui/Card";
 import { Alert } from "../ui/Alert";
-import { Spinner } from "../ui/Spinner";
+import { LoadingScreen } from "../ui/LoadingScreen";
 import { cn } from "../../lib/utils";
 import type { Question } from "../../api";
 
@@ -18,152 +18,206 @@ interface QuestionsFlowProps {
 
 function QuestionsFlow({ claim, questions, onSubmit, onBack, isLoading, error }: QuestionsFlowProps) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   
   const answeredCount = Object.keys(answers).filter((k) => answers[k]).length;
   const allAnswered = questions.length === 0 || answeredCount === questions.length;
+  const currentQuestion = questions[currentQuestionIndex];
+  const progress = questions.length === 0 ? 100 : ((currentQuestionIndex + 1) / questions.length) * 100;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSubmit(answers);
   };
 
-  const handleAnswerChange = (slot: string, value: string) => {
+  const handleOptionSelect = (slot: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [slot]: value }));
+    // Auto-advance to next question after selection
+    if (currentQuestionIndex < questions.length - 1) {
+      setTimeout(() => {
+        setCurrentQuestionIndex(currentQuestionIndex + 1);
+      }, 300);
+    }
   };
 
-  return (
-    <div className="animate-fade-in max-w-2xl mx-auto">
-      {/* Progress indicator */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-supported-bg text-supported">
-          <CheckCircle2 className="w-4 h-4" />
-        </div>
-        <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-primary transition-all duration-300"
-            style={{ width: questions.length === 0 ? "100%" : `${(answeredCount / questions.length) * 100}%` }}
-          />
-        </div>
-        <span className="text-sm text-foreground-muted">
-          {questions.length === 0 ? "Ready" : `${answeredCount}/${questions.length}`}
-        </span>
-      </div>
+  const goToPreviousQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
+  };
 
-      {/* Claim Display */}
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="text-xs font-medium text-foreground-muted uppercase tracking-wide mb-1">
-            Your Claim
-          </div>
-          <p className="text-foreground font-medium">{claim}</p>
-        </CardContent>
-      </Card>
+  // Show loading screen when submitting
+  if (isLoading) {
+    return <LoadingScreen submessage="Searching PubMed for Evidence" />;
+  }
 
-      {/* Questions Form */}
-      <Card variant="elevated">
-        <CardContent className="p-6 sm:p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {questions.length === 0 ? (
-              <Alert variant="success">
-                Your claim was specific enough - no clarifying questions needed. Click below to search for evidence.
-              </Alert>
-            ) : (
-              <>
-                <div className="flex items-center gap-2 mb-4">
-                  <MessageSquare className="w-5 h-5 text-accent" />
-                  <h3 className="font-semibold text-foreground">
-                    {questions.length === 1 ? "One quick question" : `${questions.length} quick questions`}
-                  </h3>
-                </div>
-                
-                <p className="text-sm text-foreground-muted mb-6">
-                  Help us find the most relevant research by answering these questions:
-                </p>
-
-                <div className="space-y-5">
-                  {questions.map((q, index) => (
-                    <div key={q.slot} className="animate-slide-up" style={{ animationDelay: `${index * 100}ms` }}>
-                      <label className="block text-sm font-medium text-foreground mb-2">
-                        {q.text}
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={answers[q.slot] || ""}
-                          onChange={(e) => handleAnswerChange(q.slot, e.target.value)}
-                          className={cn(
-                            "w-full px-4 py-3 rounded-lg border bg-surface text-foreground appearance-none cursor-pointer",
-                            "focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent",
-                            "transition-all duration-200",
-                            answers[q.slot] ? "border-supported" : "border-border"
-                          )}
-                        >
-                          <option value="">Select an option...</option>
-                          {q.option_values.map((val, i) => (
-                            <option key={val} value={val}>
-                              {q.option_labels[i] || val}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                          <svg className="w-4 h-4 text-foreground-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                      </div>
-                      {answers[q.slot] && (
-                        <div className="mt-1.5 flex items-center gap-1 text-xs text-supported">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>Selected: {q.option_labels[q.option_values.indexOf(answers[q.slot])] || answers[q.slot]}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* Error Display */}
+  // No questions needed - ready to search
+  if (questions.length === 0) {
+    return (
+      <div className="animate-fade-in max-w-2xl mx-auto">
+        <Card variant="elevated">
+          <CardContent className="p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-supported-bg flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-supported" />
+            </div>
+            <h2 className="text-2xl font-serif text-foreground mb-3">
+              Your claim is ready
+            </h2>
+            <p className="text-foreground-muted mb-8">
+              Your claim was specific enough - no clarifying questions needed. Click below to search for evidence.
+            </p>
+            
             {error && (
-              <Alert variant="error">
+              <Alert variant="error" className="mb-6 text-left">
                 {error}
               </Alert>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onBack}
-                disabled={isLoading}
-              >
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button variant="outline" onClick={onBack}>
                 <ArrowLeft className="w-4 h-4" />
                 Start Over
               </Button>
-              
-              <Button
-                type="submit"
-                className="flex-1"
-                disabled={!allAnswered || isLoading}
-                isLoading={isLoading}
-              >
-                {isLoading ? "Searching PubMed..." : "Find Evidence"}
-                {!isLoading && <ChevronRight className="w-5 h-5" />}
+              <Button onClick={handleSubmit}>
+                Find Evidence
+                <ChevronRight className="w-5 h-5" />
               </Button>
             </div>
-          </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-          {/* Loading State */}
-          {isLoading && (
-            <div className="mt-6 pt-6 border-t border-border">
-              <Spinner 
-                message="Searching PubMed..."
-                submessage="This may take 20-40 seconds"
-              />
+  return (
+    <div className="animate-fade-in max-w-3xl mx-auto">
+      {/* Progress Header */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium tracking-widest text-foreground-muted uppercase">
+            Refining Search Scope
+          </span>
+          <span className="text-sm text-foreground-muted">
+            Step {currentQuestionIndex + 1} of {questions.length}
+          </span>
+        </div>
+        
+        {/* Progress Bar */}
+        <div className="h-1.5 bg-surface-muted rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-primary transition-all duration-500 ease-out rounded-full"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Question Card */}
+      <Card className="bg-surface-muted border-0 rounded-3xl overflow-hidden">
+        <CardContent className="p-8 sm:p-12">
+          {/* Claim Display */}
+          <div className="mb-8 pb-8 border-b border-border">
+            <span className="text-xs font-medium tracking-widest text-foreground-subtle uppercase">
+              Analyzing
+            </span>
+            <p className="text-foreground font-medium mt-1">{claim}</p>
+          </div>
+
+          {/* Current Question */}
+          <form onSubmit={handleSubmit}>
+            <h2 className="text-2xl sm:text-3xl font-serif text-foreground mb-2 leading-snug">
+              {currentQuestion.text}
+            </h2>
+            
+            {/* Decorative line */}
+            <div className="w-16 h-0.5 bg-primary/30 mb-8" />
+
+            {/* Options as cards */}
+            <div className="space-y-4">
+              {currentQuestion.option_values.map((val, i) => {
+                const isSelected = answers[currentQuestion.slot] === val;
+                const label = currentQuestion.option_labels[i] || val;
+                
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => handleOptionSelect(currentQuestion.slot, val)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-5 sm:p-6 rounded-2xl border-2 transition-all duration-200 text-left group",
+                      isSelected 
+                        ? "border-primary bg-surface shadow-md" 
+                        : "border-border bg-surface hover:border-primary/50 hover:shadow-sm"
+                    )}
+                  >
+                    <span className={cn(
+                      "text-lg font-medium transition-colors",
+                      isSelected ? "text-primary" : "text-foreground-muted group-hover:text-foreground"
+                    )}>
+                      {label}
+                    </span>
+                    
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200",
+                      isSelected 
+                        ? "bg-primary text-surface" 
+                        : "border border-border text-foreground-subtle group-hover:border-primary/50"
+                    )}>
+                      <ChevronRight className="w-5 h-5" />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-          )}
+
+            {/* Error Display */}
+            {error && (
+              <Alert variant="error" className="mt-6">
+                {error}
+              </Alert>
+            )}
+
+            {/* Navigation */}
+            <div className="flex items-center justify-between mt-10 pt-6 border-t border-border">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={currentQuestionIndex > 0 ? goToPreviousQuestion : onBack}
+              >
+                <ArrowLeft className="w-4 h-4" />
+                {currentQuestionIndex > 0 ? "Previous" : "Start Over"}
+              </Button>
+
+              {allAnswered && (
+                <Button type="submit">
+                  Find Evidence
+                  <ChevronRight className="w-5 h-5" />
+                </Button>
+              )}
+            </div>
+          </form>
         </CardContent>
       </Card>
+
+      {/* Question navigation dots */}
+      {questions.length > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          {questions.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentQuestionIndex(idx)}
+              disabled={idx > answeredCount}
+              className={cn(
+                "w-2.5 h-2.5 rounded-full transition-all duration-200",
+                idx === currentQuestionIndex
+                  ? "bg-primary w-8"
+                  : idx < currentQuestionIndex || answers[questions[idx].slot]
+                    ? "bg-primary/40 hover:bg-primary/60"
+                    : "bg-border"
+              )}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,45 +1,46 @@
 @import "tailwindcss";
 
-/* ===== Design System Tokens ===== */
+/* ===== Design System Tokens - VitaClaim Inspired ===== */
 :root {
-  /* Primary Colors - Deep Navy & Teal */
-  --color-primary: #1e3a5f;
-  --color-primary-dark: #152a45;
-  --color-primary-light: #2a4d7a;
+  /* Primary Colors - Sage/Olive Green */
+  --color-primary: #6B7B5F;
+  --color-primary-dark: #545f4a;
+  --color-primary-light: #8a9a7c;
   
-  /* Accent Colors - Teal & Soft Blue */
-  --color-accent: #2dd4bf;
-  --color-accent-dark: #14b8a6;
-  --color-accent-light: #5eead4;
+  /* Accent Colors - Same olive palette */
+  --color-accent: #6B7B5F;
+  --color-accent-dark: #545f4a;
+  --color-accent-light: #8a9a7c;
   
-  /* Neutrals */
-  --color-background: #f8fafc;
+  /* Neutrals - Warm cream/off-white */
+  --color-background: #FAFAF7;
   --color-surface: #ffffff;
   --color-surface-elevated: #ffffff;
-  --color-muted: #f1f5f9;
-  --color-border: #e2e8f0;
-  --color-border-light: #f1f5f9;
+  --color-surface-muted: #F5F5F0;
+  --color-muted: #F0F0EB;
+  --color-border: #E5E5E0;
+  --color-border-light: #F0F0EB;
   
   /* Text Colors */
-  --color-foreground: #0f172a;
-  --color-foreground-muted: #64748b;
-  --color-foreground-subtle: #94a3b8;
+  --color-foreground: #1a1a1a;
+  --color-foreground-muted: #6b6b6b;
+  --color-foreground-subtle: #9b9b9b;
   
   /* Semantic Colors - Evidence Verdicts */
-  --color-supported: #10b981;
-  --color-supported-bg: #d1fae5;
-  --color-mixed: #f59e0b;
-  --color-mixed-bg: #fef3c7;
-  --color-unsupported: #ef4444;
-  --color-unsupported-bg: #fee2e2;
-  --color-insufficient: #6b7280;
-  --color-insufficient-bg: #f3f4f6;
+  --color-supported: #6B7B5F;
+  --color-supported-bg: #E8EDE4;
+  --color-mixed: #C4A35A;
+  --color-mixed-bg: #FBF7EE;
+  --color-unsupported: #B85C5C;
+  --color-unsupported-bg: #FBEAEA;
+  --color-insufficient: #8b8b8b;
+  --color-insufficient-bg: #f5f5f5;
   
-  /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  /* Shadows - Softer */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-md: 0 4px 12px -1px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 10px 25px -3px rgb(0 0 0 / 0.08);
+  --shadow-xl: 0 20px 40px -5px rgb(0 0 0 / 0.1);
   
   /* Border Radius */
   --radius-sm: 0.375rem;
@@ -47,6 +48,7 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
   --radius-full: 9999px;
 }
 
@@ -61,6 +63,7 @@
   --color-background: var(--color-background);
   --color-surface: var(--color-surface);
   --color-surface-elevated: var(--color-surface-elevated);
+  --color-surface-muted: var(--color-surface-muted);
   --color-muted: var(--color-muted);
   --color-border: var(--color-border);
   --color-border-light: var(--color-border-light);
@@ -77,6 +80,7 @@
   --color-insufficient-bg: var(--color-insufficient-bg);
   
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-serif: "Playfair Display", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   
   --radius-sm: var(--radius-sm);
@@ -84,6 +88,7 @@
   --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-xl);
   --radius-2xl: var(--radius-2xl);
+  --radius-3xl: var(--radius-3xl);
   --radius-full: var(--radius-full);
   
   --shadow-sm: var(--shadow-sm);
@@ -113,15 +118,14 @@ body {
   line-height: 1.6;
 }
 
-/* ===== Grain/Texture Overlay ===== */
+/* ===== Subtle Gradient Background ===== */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 9999;
-  opacity: 0.03;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  z-index: -1;
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(107, 123, 95, 0.08), transparent);
 }
 
 /* ===== Typography ===== */
@@ -203,6 +207,16 @@ p {
   to { transform: rotate(360deg); }
 }
 
+@keyframes bounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out;
 }
@@ -217,4 +231,12 @@ p {
 
 .animate-spin {
   animation: spin 1s linear infinite;
+}
+
+.animate-bounce-dot {
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
 }

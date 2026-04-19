@@ -22,8 +22,8 @@ function CitedPaperCard({ paper }: CitedPaperCardProps) {
   const relevance = Math.round(paper.relevance_score * 100);
 
   return (
-    <Card className="hover:shadow-md transition-shadow duration-200">
-      <CardContent className="p-4">
+    <Card className="border-0 bg-surface-muted rounded-2xl hover:shadow-md transition-all duration-200">
+      <CardContent className="p-5">
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <Badge variant={stance.variant}>{stance.label}</Badge>
           <Badge variant="outline">{relevance}% relevant</Badge>
@@ -52,7 +52,7 @@ function CitedPaperCard({ paper }: CitedPaperCardProps) {
         </h4>
 
         {paper.one_line_summary && (
-          <p className="text-sm text-foreground-muted leading-relaxed mb-2">
+          <p className="text-sm text-foreground-muted leading-relaxed mb-3">
             {paper.one_line_summary}
           </p>
         )}
@@ -74,8 +74,11 @@ function RawPaperCard({ paper }: RawPaperCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <Card className={cn("hover:shadow-md transition-shadow duration-200", paper.is_retracted && "bg-orange-50 border-orange-200")}>
-      <CardContent className="p-4">
+    <Card className={cn(
+      "border-0 rounded-2xl hover:shadow-md transition-all duration-200",
+      paper.is_retracted ? "bg-mixed-bg" : "bg-surface-muted"
+    )}>
+      <CardContent className="p-5">
         {paper.is_retracted && (
           <Badge variant="unsupported" className="gap-1 mb-3">
             <AlertTriangle className="w-3 h-3" />
@@ -118,7 +121,7 @@ function RawPaperCard({ paper }: RawPaperCardProps) {
             {paper.abstract.length > 200 && (
               <button
                 onClick={() => setExpanded(!expanded)}
-                className="mt-2 text-sm text-primary hover:text-primary-dark font-medium inline-flex items-center gap-1"
+                className="mt-3 text-sm text-primary hover:text-primary-dark font-medium inline-flex items-center gap-1"
               >
                 {expanded ? (
                   <>

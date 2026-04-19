@@ -323,8 +323,8 @@ export default function App() {
         hasResults={hasResults} 
       />
       
-      <main className="flex-1 py-8 px-4 sm:px-6">
-        <div className="max-w-5xl mx-auto">
+      <main className="flex-1 py-10 px-4 sm:px-6">
+        <div className="max-w-6xl mx-auto">
           {renderTabContent()}
         </div>
       </main>

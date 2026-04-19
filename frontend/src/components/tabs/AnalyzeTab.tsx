@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Sparkles, ChevronRight, User } from "lucide-react";
+import { Search, ChevronRight, User } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent } from "../ui/Card";
 import { Alert } from "../ui/Alert";
@@ -36,20 +36,24 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
   return (
     <div className="animate-fade-in">
       {/* Hero Section */}
-      <section className="text-center py-10 sm:py-14">
-        <div className="max-w-2xl mx-auto px-4">
-          <div className="inline-flex items-center gap-2 bg-accent/10 text-accent-dark px-4 py-1.5 rounded-full text-sm font-medium mb-6">
-            <Sparkles className="w-4 h-4" />
-            Powered by PubMed Research
+      <section className="text-center py-16 sm:py-24">
+        <div className="max-w-3xl mx-auto px-4">
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 bg-surface-muted border border-border px-4 py-2 rounded-full text-xs font-medium tracking-widest text-foreground-muted mb-8">
+            <span className="w-2 h-2 rounded-full bg-primary"></span>
+            PUBMED SYNCHRONIZED RESEARCH PIPELINE
           </div>
           
-          <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4 text-balance">
-            Verify nutrition claims with peer-reviewed science
+          {/* Main Headline */}
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif text-foreground mb-4 leading-tight">
+            Scientific clarity for
+          </h1>
+          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-serif italic text-primary mb-8">
+            health narratives.
           </h2>
           
-          <p className="text-foreground-muted text-lg leading-relaxed">
-            Enter any food or nutrition health claim and we&apos;ll search the biomedical
-            literature to find supporting or contradicting evidence.
+          <p className="text-foreground-muted text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto">
+            We bridge the gap between wellness trends and clinical reality. Our AI-driven pipeline parses thousands of peer-reviewed sources from the NCBI database to deliver definitive results.
           </p>
         </div>
       </section>
@@ -64,7 +68,7 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
                 Your claim or question
               </label>
               <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground-subtle" />
+                <Search className="absolute left-4 top-4 w-5 h-5 text-foreground-subtle" />
                 <textarea
                   id="claim"
                   rows={3}
@@ -72,8 +76,8 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
                   onChange={(e) => setClaim(e.target.value)}
                   placeholder="e.g. Is turmeric good for inflammation?"
                   className={cn(
-                    "w-full pl-12 pr-4 py-3 rounded-lg border bg-surface text-foreground placeholder:text-foreground-subtle",
-                    "focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent",
+                    "w-full pl-12 pr-4 py-3 rounded-2xl border bg-surface text-foreground placeholder:text-foreground-subtle",
+                    "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
                     "resize-none transition-all duration-200",
                     error ? "border-unsupported" : "border-border"
                   )}
@@ -99,8 +103,8 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
                 min={1}
                 max={120}
                 className={cn(
-                  "w-32 px-4 py-2.5 rounded-lg border border-border bg-surface text-foreground",
-                  "focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent",
+                  "w-32 px-4 py-2.5 rounded-xl border border-border bg-surface text-foreground",
+                  "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
                   "placeholder:text-foreground-subtle transition-all duration-200"
                 )}
               />
@@ -124,8 +128,8 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
               isLoading={isLoading}
               className="w-full"
             >
-              {isLoading ? "Analyzing claim..." : "Analyze Claim"}
-              {!isLoading && <ChevronRight className="w-5 h-5" />}
+              {isLoading ? "Analyzing claim..." : "Analyze Your Claim"}
+              {!isLoading && <Search className="w-5 h-5" />}
             </Button>
           </form>
 
@@ -141,10 +145,22 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
         </CardContent>
       </Card>
 
+      {/* Trust Badge */}
+      <div className="max-w-2xl mx-auto mt-8 flex items-center justify-center gap-4">
+        <div className="flex -space-x-2">
+          <div className="w-8 h-8 rounded-full bg-surface-muted border-2 border-surface flex items-center justify-center text-xs font-medium text-foreground-muted">JD</div>
+          <div className="w-8 h-8 rounded-full bg-surface-muted border-2 border-surface flex items-center justify-center text-xs font-medium text-foreground-muted">SR</div>
+          <div className="w-8 h-8 rounded-full bg-surface-muted border-2 border-surface flex items-center justify-center text-xs font-medium text-foreground-muted">MK</div>
+        </div>
+        <span className="text-xs font-medium tracking-widest text-foreground-muted uppercase">
+          Trusted by Clinical Researchers
+        </span>
+      </div>
+
       {/* Example Claims */}
       {!isLoading && (
-        <div className="max-w-2xl mx-auto mt-8">
-          <p className="text-sm text-foreground-muted text-center mb-3">
+        <div className="max-w-2xl mx-auto mt-12">
+          <p className="text-sm text-foreground-muted text-center mb-4">
             Try an example:
           </p>
           <div className="flex flex-wrap justify-center gap-2">
@@ -153,8 +169,8 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
                 key={example}
                 onClick={() => handleExampleClick(example)}
                 className={cn(
-                  "px-3 py-1.5 text-sm rounded-full border transition-all duration-200",
-                  "border-border text-foreground-muted hover:border-accent hover:text-accent hover:bg-accent/5"
+                  "px-4 py-2 text-sm rounded-full border transition-all duration-200",
+                  "border-border text-foreground-muted hover:border-primary hover:text-primary hover:bg-primary/5"
                 )}
               >
                 {example}
