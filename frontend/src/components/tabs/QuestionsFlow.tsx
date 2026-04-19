@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { ArrowLeft, ChevronRight, MessageSquare, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, MessageSquare, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent } from "../ui/Card";
 import { Alert } from "../ui/Alert";
-import { Spinner } from "../ui/Spinner";
 import { cn } from "../../lib/utils";
 import type { Question } from "../../api";
 
@@ -32,8 +31,7 @@ function QuestionsFlow({ claim, questions, onSubmit, onBack, isLoading, error }:
   };
 
   return (
-    <div className="animate-fade-in max-w-2xl mx-auto">
-      {/* Progress indicator */}
+    <div className="animate-fade-in max-w-3xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-supported-bg text-supported">
           <CheckCircle2 className="w-4 h-4" />
@@ -49,7 +47,6 @@ function QuestionsFlow({ claim, questions, onSubmit, onBack, isLoading, error }:
         </span>
       </div>
 
-      {/* Claim Display */}
       <Card className="mb-6">
         <CardContent className="p-4">
           <div className="text-xs font-medium text-foreground-muted uppercase tracking-wide mb-1">
@@ -59,7 +56,6 @@ function QuestionsFlow({ claim, questions, onSubmit, onBack, isLoading, error }:
         </CardContent>
       </Card>
 
-      {/* Questions Form */}
       <Card variant="elevated">
         <CardContent className="p-6 sm:p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -122,14 +118,12 @@ function QuestionsFlow({ claim, questions, onSubmit, onBack, isLoading, error }:
               </>
             )}
 
-            {/* Error Display */}
             {error && (
               <Alert variant="error">
                 {error}
               </Alert>
             )}
 
-            {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-3 pt-4">
               <Button
                 type="button"
@@ -147,19 +141,23 @@ function QuestionsFlow({ claim, questions, onSubmit, onBack, isLoading, error }:
                 disabled={!allAnswered || isLoading}
                 isLoading={isLoading}
               >
-                {isLoading ? "Searching PubMed..." : "Find Evidence"}
+                {isLoading ? "Retrieving evidence..." : "Find Evidence"}
                 {!isLoading && <ChevronRight className="w-5 h-5" />}
               </Button>
             </div>
           </form>
 
-          {/* Loading State */}
           {isLoading && (
-            <div className="mt-6 pt-6 border-t border-border">
-              <Spinner 
-                message="Searching PubMed..."
-                submessage="This may take 20-40 seconds"
-              />
+            <div className="mt-6 pt-6 border-t border-border rounded-xl">
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground mb-1">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  Retrieving Evidence
+                </div>
+                <p className="text-xs text-foreground-muted">
+                  Building PubMed query, ranking studies, and filtering for reliability signals.
+                </p>
+              </div>
             </div>
           )}
         </CardContent>

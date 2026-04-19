@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Search, Sparkles, ChevronRight, User } from "lucide-react";
+import { Search, Sparkles, ChevronRight, User, ShieldCheck } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent } from "../ui/Card";
 import { Alert } from "../ui/Alert";
-import { Spinner } from "../ui/Spinner";
 import { cn } from "../../lib/utils";
 
 interface AnalyzeTabProps {
@@ -35,30 +34,35 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
 
   return (
     <div className="animate-fade-in">
-      {/* Hero Section */}
-      <section className="text-center py-10 sm:py-14">
-        <div className="max-w-2xl mx-auto px-4">
-          <div className="inline-flex items-center gap-2 bg-accent/10 text-accent-dark px-4 py-1.5 rounded-full text-sm font-medium mb-6">
+      <section className="text-center py-8 sm:py-12">
+        <div className="max-w-3xl mx-auto px-2">
+          <div className="inline-flex items-center gap-2 border border-border bg-surface px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold text-foreground-muted mb-6">
             <Sparkles className="w-4 h-4" />
-            Powered by PubMed Research
+            PubMed-synchronized research workflow
           </div>
-          
-          <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4 text-balance">
-            Verify nutrition claims with peer-reviewed science
+
+          <h2 className="text-4xl sm:text-5xl font-[family-name:var(--font-display)] font-semibold text-foreground mb-4 text-balance leading-tight">
+            Scientific clarity for
+            <span className="block text-primary-light italic font-medium">food and nutrition narratives.</span>
           </h2>
-          
-          <p className="text-foreground-muted text-lg leading-relaxed">
-            Enter any food or nutrition health claim and we&apos;ll search the biomedical
-            literature to find supporting or contradicting evidence.
+
+          <p className="text-foreground-muted text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
+            Turn everyday health claims into transparent, evidence-backed verdicts with a guided
+            question flow and peer-reviewed supporting papers.
           </p>
         </div>
       </section>
 
-      {/* Main Input Card */}
-      <Card variant="elevated" className="max-w-2xl mx-auto">
-        <CardContent className="p-6 sm:p-8">
+      <Card variant="elevated" className="max-w-3xl mx-auto border-primary/10 shadow-lg">
+        <CardContent className="p-6 sm:p-8 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-foreground">Analyze your claim</p>
+            <div className="inline-flex items-center gap-2 text-xs text-foreground-muted bg-muted px-3 py-1.5 rounded-full">
+              <ShieldCheck className="w-3.5 h-3.5 text-supported" />
+              Transparent, citation-first synthesis
+            </div>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Claim Input */}
             <div>
               <label htmlFor="claim" className="block text-sm font-semibold text-foreground mb-2">
                 Your claim or question
@@ -81,7 +85,6 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
               </div>
             </div>
 
-            {/* Age Input */}
             <div>
               <label htmlFor="age" className="block text-sm font-semibold text-foreground mb-2">
                 <span className="flex items-center gap-2">
@@ -105,45 +108,32 @@ function AnalyzeTab({ onStartAnalysis, isLoading, error }: AnalyzeTabProps) {
                 )}
               />
               <p className="mt-1.5 text-xs text-foreground-subtle">
-                Helps find studies relevant to your demographic
+                Optional context to prioritize age-relevant studies
               </p>
             </div>
 
-            {/* Error Display */}
             {error && (
               <Alert variant="error">
                 {error}
               </Alert>
             )}
 
-            {/* Submit Button */}
             <Button
               type="submit"
               size="lg"
               disabled={!claim.trim() || isLoading}
               isLoading={isLoading}
-              className="w-full"
+              className="w-full sm:w-auto sm:min-w-56"
             >
-              {isLoading ? "Analyzing claim..." : "Analyze Claim"}
+              {isLoading ? "Extracting claim..." : "Analyze your claim"}
               {!isLoading && <ChevronRight className="w-5 h-5" />}
             </Button>
           </form>
-
-          {/* Loading State */}
-          {isLoading && (
-            <div className="mt-6 pt-6 border-t border-border">
-              <Spinner 
-                message="Extracting claim details..."
-                submessage="This may take a few seconds"
-              />
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Example Claims */}
       {!isLoading && (
-        <div className="max-w-2xl mx-auto mt-8">
+        <div className="max-w-3xl mx-auto mt-8">
           <p className="text-sm text-foreground-muted text-center mb-3">
             Try an example:
           </p>

@@ -11,6 +11,7 @@ import {
 
 // Layout Components
 import { Header } from "./components/layout/Header";
+import { AnalysisPipeline } from "./components/layout/AnalysisPipeline";
 import { Tabs, type TabId } from "./components/layout/Tabs";
 import { Footer } from "./components/layout/Footer";
 
@@ -314,8 +315,26 @@ export default function App() {
     }
   };
 
+  const getPipelineStep = (): "claim" | "questions" | "evidence" | "verdict" => {
+    if (activeTab === "results") {
+      return verdictLoading || verdict ? "verdict" : "evidence";
+    }
+    if (stage === "questions") return loading ? "evidence" : "questions";
+    return "claim";
+  };
+
+  const pipelineStep = getPipelineStep();
+  const loadingStep = loading
+    ? stage === "questions"
+      ? "evidence"
+      : "claim"
+    : verdictLoading
+      ? "verdict"
+      : null;
+  const showPipeline = activeTab === "analyze" || activeTab === "results";
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
       <Header />
       <Tabs 
         activeTab={activeTab} 
@@ -324,8 +343,17 @@ export default function App() {
       />
       
       <main className="flex-1 py-8 px-4 sm:px-6">
-        <div className="max-w-5xl mx-auto">
-          {renderTabContent()}
+        <div className="max-w-6xl mx-auto">
+          {showPipeline ? (
+            <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 items-start">
+              <div className="lg:sticky lg:top-28">
+                <AnalysisPipeline currentStep={pipelineStep} loadingStep={loadingStep} />
+              </div>
+              <div>{renderTabContent()}</div>
+            </div>
+          ) : (
+            renderTabContent()
+          )}
         </div>
       </main>
       

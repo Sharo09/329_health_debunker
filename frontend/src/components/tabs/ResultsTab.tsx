@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, FileText, ChevronDown, ChevronUp, BookOpen, AlertCircle, Beaker, RotateCcw } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, BookOpen, RotateCcw, Loader2, FlaskConical } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent } from "../ui/Card";
 import { Badge } from "../ui/Badge";
@@ -62,8 +62,7 @@ function ResultsTab({
   const activeStance = stanceTabs.find((t) => t.key === stanceTab);
 
   return (
-    <div className="animate-fade-in max-w-3xl mx-auto space-y-6">
-      {/* Claim Header */}
+    <div className="animate-fade-in max-w-4xl space-y-6">
       <Card>
         <CardContent className="p-5">
           <div className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">
@@ -105,31 +104,48 @@ function ResultsTab({
         </CardContent>
       </Card>
 
-      {/* Warning */}
       {warning && (
         <Alert variant="warning">{warning}</Alert>
       )}
 
-      {/* Verdict Loading */}
       {verdictLoading && !verdict && (
-        <Card className="border-dashed">
-          <CardContent className="p-8 text-center">
-            <Spinner 
-              message={`Synthesizing verdict from ${papers.length} paper${papers.length === 1 ? "" : "s"}...`}
-              submessage="~20-30 seconds. You can read the papers below while this runs."
-            />
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-6 sm:p-7">
+            <div className="flex items-center gap-2 mb-2 text-foreground">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <p className="text-sm font-semibold">Generating Verdict</p>
+            </div>
+            <p className="text-sm text-foreground-muted mb-4">
+              Reviewing {papers.length} retrieved paper{papers.length === 1 ? "" : "s"} and producing an evidence-backed
+              synthesis.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-border bg-surface px-3 py-2">
+                <p className="text-xs text-foreground-muted">Step 1</p>
+                <p className="text-sm font-medium text-foreground">Claim Extracted</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface px-3 py-2">
+                <p className="text-xs text-foreground-muted">Step 2</p>
+                <p className="text-sm font-medium text-foreground">Evidence Retrieved</p>
+              </div>
+              <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
+                <p className="text-xs text-foreground-muted">Step 3</p>
+                <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                  <FlaskConical className="w-3.5 h-3.5 text-primary" />
+                  Verdict in Progress
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Verdict Error */}
       {verdictError && !verdict && (
         <Alert variant="error">
           Verdict synthesis failed: {verdictError}
         </Alert>
       )}
 
-      {/* Verdict Display */}
       {verdict && (
         <>
           <VerdictCard verdict={verdict} />
@@ -138,7 +154,6 @@ function ResultsTab({
             <DemographicCaveat text={verdict.demographic_caveat} />
           )}
 
-          {/* Stance Tabs */}
           <div className="pt-4">
             <div className="flex border-b border-border">
               {stanceTabs.map((tab) => {
@@ -168,7 +183,6 @@ function ResultsTab({
               })}
             </div>
 
-            {/* Papers List */}
             <div className="mt-4 space-y-3">
               {activeStance && activeStance.papers.length === 0 ? (
                 <Card className="bg-muted border-0">
@@ -189,14 +203,12 @@ function ResultsTab({
         </>
       )}
 
-      {/* No papers, no verdict, not loading */}
       {!verdictLoading && !verdictError && papers.length === 0 && !verdict && (
         <Alert variant="warning">
           No papers were retrieved and no verdict could be synthesized.
         </Alert>
       )}
 
-      {/* Retrieval Details (Collapsible) */}
       <div className="pt-4">
         <button
           onClick={() => setShowDetails(!showDetails)}
@@ -208,7 +220,6 @@ function ResultsTab({
 
         {showDetails && (
           <div className="mt-4 animate-fade-in">
-            {/* Stats Grid */}
             <div className="grid grid-cols-3 gap-4 mb-4">
               <Card className="bg-muted border-0">
                 <CardContent className="p-4 text-center">
@@ -237,7 +248,6 @@ function ResultsTab({
               </Card>
             </div>
 
-            {/* Query Used */}
             <div className="mb-4">
               <div className="text-xs text-foreground-muted mb-2">PubMed Query (final)</div>
               <code className="block bg-muted rounded-lg p-3 text-xs text-foreground-muted break-all leading-relaxed font-mono">
@@ -245,7 +255,6 @@ function ResultsTab({
               </code>
             </div>
 
-            {/* All Papers */}
             {papers.length > 0 && (
               <div>
                 <button
@@ -269,7 +278,6 @@ function ResultsTab({
         )}
       </div>
 
-      {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-border">
         <Button variant="outline" onClick={onNewClaim}>
           <ArrowLeft className="w-4 h-4" />

@@ -1,29 +1,30 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 /* ===== Design System Tokens ===== */
 :root {
-  /* Primary Colors - Deep Navy & Teal */
-  --color-primary: #1e3a5f;
-  --color-primary-dark: #152a45;
-  --color-primary-light: #2a4d7a;
+  /* Primary Colors - muted evergreen palette */
+  --color-primary: #4f6f52;
+  --color-primary-dark: #3d5640;
+  --color-primary-light: #6f8f72;
   
   /* Accent Colors - Teal & Soft Blue */
-  --color-accent: #2dd4bf;
-  --color-accent-dark: #14b8a6;
-  --color-accent-light: #5eead4;
+  --color-accent: #8cae90;
+  --color-accent-dark: #6c8c71;
+  --color-accent-light: #acc8af;
   
   /* Neutrals */
-  --color-background: #f8fafc;
-  --color-surface: #ffffff;
+  --color-background: #f8faf7;
+  --color-surface: #fdfdfb;
   --color-surface-elevated: #ffffff;
   --color-muted: #f1f5f9;
-  --color-border: #e2e8f0;
-  --color-border-light: #f1f5f9;
+  --color-border: #dde4da;
+  --color-border-light: #edf1eb;
   
   /* Text Colors */
-  --color-foreground: #0f172a;
-  --color-foreground-muted: #64748b;
-  --color-foreground-subtle: #94a3b8;
+  --color-foreground: #132017;
+  --color-foreground-muted: #44584a;
+  --color-foreground-subtle: #6f8072;
   
   /* Semantic Colors - Evidence Verdicts */
   --color-supported: #10b981;
@@ -77,6 +78,7 @@
   --color-insufficient-bg: var(--color-insufficient-bg);
   
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   
   --radius-sm: var(--radius-sm);
@@ -114,18 +116,9 @@ body {
 }
 
 /* ===== Grain/Texture Overlay ===== */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.03;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-}
-
 /* ===== Typography ===== */
 h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
   font-weight: 600;
   line-height: 1.25;
   color: var(--color-foreground);
