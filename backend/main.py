@@ -57,8 +57,63 @@ from src.elicitation.question_templates import get_question
 # The legacy one is available as ``LegacyRetrievalAgent`` if needed.
 from src.retrieval import RetrievalAgent
 
+# --- Station 4 imports ---
+from src.synthesis import (
+    Paper as ScorePaper,
+    ScoreRequest,
+    UserProfile,
+    analyze_claim,
+)
+
 # --- Shared schema ---
 from src.schemas import LockedPICO
+
+# Station 2 population token → Station 4 DemographicGroup literal.
+_POPULATION_TO_DEMOGRAPHIC: dict[str, str] = {
+    "healthy_adults": "adults",
+    "healthy_replete": "adults",
+    "children": "children",
+    "infants": "infants",
+    "adolescents": "adolescents",
+    "elderly": "older_adults",
+    "pregnant": "adults",
+    "obese": "adults",
+    "diabetic": "adults",
+    "hypercholesterolemia": "adults",
+    "deficient": "adults",
+    "inflammatory_patients": "adults",
+    "cardiovascular_patients": "adults",
+    "liver_patients": "adults",
+    "lactose_intolerant": "general",
+    "condition": "general",
+}
+
+
+def _locked_to_user_profile(locked, age: Optional[int]) -> UserProfile:
+    demographic = _POPULATION_TO_DEMOGRAPHIC.get(
+        (locked.population or "").lower(), "general"
+    )
+    return UserProfile(age=age, demographic_group=demographic)
+
+
+def _retrieved_to_score_paper(p) -> ScorePaper:
+    """Adapt Station 3's RetrievedPaper to Station 4's Paper schema."""
+    abstract = p.abstract or p.title
+    sentences = [s.strip() for s in abstract.split(".") if s.strip()]
+    if len(sentences) >= 2:
+        claim_text = sentences[-2] + ". " + sentences[-1] + "."
+    elif sentences:
+        claim_text = sentences[-1] + "."
+    else:
+        claim_text = abstract[:300]
+    return ScorePaper(
+        paper_id=p.pmid,
+        title=p.title,
+        extracted_claim=claim_text,
+        url=f"https://pubmed.ncbi.nlm.nih.gov/{p.pmid}/",
+        population_studied=None,
+        nutritional_components=[],
+    )
 
 
 def _mock_gemini_provider(
@@ -203,6 +258,29 @@ class PaperOut(BaseModel):
     is_retracted: bool
 
 
+class CitedPaperOut(BaseModel):
+    """One paper cited in the verdict, grouped by stance."""
+    paper_id: str
+    title: str
+    url: Optional[str] = None
+    stance: str                    # supports | contradicts | neutral | unclear
+    relevance_score: float
+    applies_to: List[str] = Field(default_factory=list)
+    demographic_match: bool = False
+    one_line_summary: str = ""
+
+
+class VerdictOut(BaseModel):
+    """Station 4 synthesis output, shaped for the frontend."""
+    verdict: str                   # supported | contradicted | insufficient_evidence
+    confidence_percent: float
+    verdict_reasoning: str
+    demographic_caveat: Optional[str] = None
+    supporting_papers: List[CitedPaperOut] = Field(default_factory=list)
+    contradicting_papers: List[CitedPaperOut] = Field(default_factory=list)
+    neutral_papers: List[CitedPaperOut] = Field(default_factory=list)
+
+
 class FinalizeResponse(BaseModel):
     below_threshold: bool
     total_pubmed_hits: int
@@ -210,6 +288,8 @@ class FinalizeResponse(BaseModel):
     relaxation_level: int
     papers: List[PaperOut]
     warning: Optional[str] = None
+    # Station 4 verdict (new). May be null if synthesis failed or no papers.
+    verdict: Optional[VerdictOut] = None
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +495,50 @@ def finalize_claim(req: FinalizeRequest):
             "Results may be limited. Try broadening your query."
         )
 
+    # ---- Station 4 synthesis — verdict + cited-paper grouping ---------
+    verdict_out: Optional[VerdictOut] = None
+    if result.papers:
+        try:
+            score_papers_in = [
+                _retrieved_to_score_paper(p) for p in result.papers[:40]
+            ]
+            analysis = analyze_claim(
+                ScoreRequest(
+                    user_claim=locked.raw_claim,
+                    user_profile=_locked_to_user_profile(locked, req.age),
+                    papers=score_papers_in,
+                )
+            )
+            v = analysis.verdict
+
+            def _to_cited(cp) -> CitedPaperOut:
+                # ``cp.applies_to`` items are DemographicGroup literals, already strings.
+                return CitedPaperOut(
+                    paper_id=cp.paper_id,
+                    title=cp.title,
+                    url=cp.url,
+                    stance=cp.stance,
+                    relevance_score=cp.relevance_score,
+                    applies_to=[str(x) for x in (cp.applies_to or [])],
+                    demographic_match=bool(cp.demographic_match),
+                    one_line_summary=cp.one_line_summary,
+                )
+
+            verdict_out = VerdictOut(
+                verdict=v.verdict,
+                confidence_percent=v.confidence_percent,
+                verdict_reasoning=v.verdict_reasoning,
+                demographic_caveat=v.demographic_caveat,
+                supporting_papers=[_to_cited(cp) for cp in v.supporting_papers],
+                contradicting_papers=[_to_cited(cp) for cp in v.contradicting_papers],
+                neutral_papers=[_to_cited(cp) for cp in v.neutral_papers],
+            )
+        except Exception as e:
+            # Don't fail the whole request if synthesis blows up — still
+            # return the retrieved papers so the UI has something to show.
+            import logging
+            logging.getLogger(__name__).warning("Synthesis failed: %s", e)
+
     return FinalizeResponse(
         below_threshold=below_threshold,
         total_pubmed_hits=total_pubmed_hits,
@@ -422,6 +546,7 @@ def finalize_claim(req: FinalizeRequest):
         relaxation_level=relaxation_proxy,
         papers=papers_out,
         warning=warning,
+        verdict=verdict_out,
     )
 
 

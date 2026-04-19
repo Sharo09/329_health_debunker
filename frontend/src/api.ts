@@ -26,6 +26,27 @@ export type Paper = {
   is_retracted: boolean;
 };
 
+export type CitedPaper = {
+  paper_id: string;
+  title: string;
+  url: string | null;
+  stance: "supports" | "contradicts" | "neutral" | "unclear";
+  relevance_score: number;
+  applies_to: string[];
+  demographic_match: boolean;
+  one_line_summary: string;
+};
+
+export type Verdict = {
+  verdict: "supported" | "contradicted" | "insufficient_evidence";
+  confidence_percent: number;
+  verdict_reasoning: string;
+  demographic_caveat: string | null;
+  supporting_papers: CitedPaper[];
+  contradicting_papers: CitedPaper[];
+  neutral_papers: CitedPaper[];
+};
+
 export type FinalizeResponse = {
   below_threshold: boolean;
   total_pubmed_hits: number;
@@ -33,6 +54,7 @@ export type FinalizeResponse = {
   relaxation_level: number;
   papers: Paper[];
   warning?: string | null;
+  verdict: Verdict | null;
 };
 
 // BASE_URL is empty string in production (same origin) and proxied in dev

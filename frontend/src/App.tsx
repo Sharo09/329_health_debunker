@@ -1,6 +1,204 @@
 // frontend/src/App.tsx
 import { useState } from "react";
-import { extractClaim, finalizeClaim, Question, Paper } from "./api";
+import {
+  extractClaim,
+  finalizeClaim,
+  Question,
+  Paper,
+  CitedPaper,
+  Verdict,
+} from "./api";
+
+// ---- Verdict display palette ----
+
+const VERDICT_STYLES: Record<
+  Verdict["verdict"],
+  { label: string; bg: string; border: string; text: string; bar: string }
+> = {
+  supported: {
+    label: "Supported by evidence",
+    bg: "#ecfdf5",
+    border: "#6ee7b7",
+    text: "#065f46",
+    bar: "#10b981",
+  },
+  contradicted: {
+    label: "Contradicted by evidence",
+    bg: "#fef2f2",
+    border: "#fca5a5",
+    text: "#991b1b",
+    bar: "#ef4444",
+  },
+  insufficient_evidence: {
+    label: "Insufficient evidence",
+    bg: "#f1f5f9",
+    border: "#cbd5e1",
+    text: "#334155",
+    bar: "#64748b",
+  },
+};
+
+const STANCE_BADGE: Record<string, { bg: string; text: string }> = {
+  supports: { bg: "#dcfce7", text: "#166534" },
+  contradicts: { bg: "#fee2e2", text: "#991b1b" },
+  neutral: { bg: "#f1f5f9", text: "#475569" },
+  unclear: { bg: "#fef3c7", text: "#854d0e" },
+};
+
+// ---- Verdict block ----
+
+function VerdictHeader({ verdict }: { verdict: Verdict }) {
+  const style = VERDICT_STYLES[verdict.verdict];
+  const pct = Math.round(verdict.confidence_percent);
+  return (
+    <div
+      style={{
+        background: style.bg,
+        border: `1px solid ${style.border}`,
+        borderRadius: 12,
+        padding: 20,
+        marginBottom: 20,
+      }}
+    >
+      <div style={{ fontSize: 13, color: style.text, fontWeight: 600, letterSpacing: 0.5 }}>
+        VERDICT
+      </div>
+      <div style={{ fontSize: 24, color: style.text, fontWeight: 700, marginTop: 4 }}>
+        {style.label}
+      </div>
+
+      {/* Confidence bar */}
+      <div style={{ marginTop: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 12,
+            color: style.text,
+            marginBottom: 4,
+          }}
+        >
+          <span>Confidence</span>
+          <span style={{ fontWeight: 600 }}>{pct}%</span>
+        </div>
+        <div
+          style={{
+            height: 8,
+            background: "rgba(0,0,0,0.08)",
+            borderRadius: 999,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${pct}%`,
+              height: "100%",
+              background: style.bar,
+              transition: "width 500ms ease",
+            }}
+          />
+        </div>
+      </div>
+
+      {verdict.verdict_reasoning && (
+        <p
+          style={{
+            marginTop: 16,
+            marginBottom: 0,
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: style.text,
+          }}
+        >
+          {verdict.verdict_reasoning}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DemographicCaveat({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        background: "#fffbea",
+        border: "1px solid #facc15",
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 16,
+        fontSize: 14,
+        color: "#713f12",
+      }}
+    >
+      <span style={{ fontWeight: 600 }}>Demographic caveat — </span>
+      {text}
+    </div>
+  );
+}
+
+function CitedPaperCard({ paper }: { paper: CitedPaper }) {
+  const stance = STANCE_BADGE[paper.stance] || STANCE_BADGE.unclear;
+  const rel = Math.round(paper.relevance_score * 100);
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 10,
+        padding: 14,
+        marginBottom: 10,
+        background: "white",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+        <span
+          style={{
+            background: stance.bg,
+            color: stance.text,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: 0.5,
+            padding: "2px 8px",
+            borderRadius: 999,
+            textTransform: "uppercase",
+          }}
+        >
+          {paper.stance}
+        </span>
+        <span style={{ fontSize: 12, color: "#64748b" }}>
+          Relevance {rel}%
+        </span>
+        {paper.demographic_match && (
+          <span
+            style={{
+              background: "#e0f2fe",
+              color: "#075985",
+              fontSize: 11,
+              padding: "2px 8px",
+              borderRadius: 999,
+            }}
+          >
+            demographic match
+          </span>
+        )}
+      </div>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>
+        {paper.url ? (
+          <a href={paper.url} target="_blank" rel="noreferrer" style={{ color: "#0f172a", textDecoration: "none" }}>
+            {paper.title}
+          </a>
+        ) : (
+          paper.title
+        )}
+      </div>
+      {paper.one_line_summary && (
+        <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+          {paper.one_line_summary}
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>PMID {paper.paper_id}</div>
+    </div>
+  );
+}
 
 // ---- Small reusable components ----
 
@@ -106,6 +304,10 @@ export default function App() {
   const [queryUsed, setQueryUsed] = useState("");
   const [totalHits, setTotalHits] = useState(0);
   const [warning, setWarning] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [stanceTab, setStanceTab] = useState<"supporting" | "contradicting" | "neutral">(
+    "supporting"
+  );
 
   const reset = () => {
     setStage("input");
@@ -117,6 +319,8 @@ export default function App() {
     setQueryUsed("");
     setTotalHits(0);
     setWarning(null);
+    setVerdict(null);
+    setStanceTab("supporting");
   };
 
   // Step 1: extract claim → get questions
@@ -156,6 +360,13 @@ export default function App() {
       setQueryUsed(data.query_used);
       setTotalHits(data.total_pubmed_hits);
       setWarning(data.warning || null);
+      setVerdict(data.verdict || null);
+      // Default the active stance tab to whichever category has cited papers.
+      if (data.verdict) {
+        if (data.verdict.supporting_papers.length > 0) setStanceTab("supporting");
+        else if (data.verdict.contradicting_papers.length > 0) setStanceTab("contradicting");
+        else setStanceTab("neutral");
+      }
       setStage("results");
     } catch (e: any) {
       setError(e.message || "Something went wrong during retrieval.");
@@ -323,68 +534,233 @@ export default function App() {
         <div>
           {warning && <Alert text={warning} kind="warning" />}
 
-          <div style={{
-            display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 12, marginBottom: 24,
-          }}>
-            <div style={{ background: "#f5f5f5", borderRadius: 10, padding: 16 }}>
-              <div style={{ fontSize: 12, color: "#888" }}>Papers found</div>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{papers.length}</div>
-              <div style={{ fontSize: 12, color: "#888" }}>of {totalHits} total hits</div>
-            </div>
-            <div style={{ background: "#f5f5f5", borderRadius: 10, padding: 16 }}>
-              <div style={{ fontSize: 12, color: "#888" }}>Retracted</div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: papers.some(p => p.is_retracted) ? "#e65100" : "#2e7d32" }}>
-                {papers.filter(p => p.is_retracted).length}
-              </div>
-              <div style={{ fontSize: 12, color: "#888" }}>flagged papers</div>
-            </div>
-            <div style={{ background: "#f5f5f5", borderRadius: 10, padding: 16 }}>
-              <div style={{ fontSize: 12, color: "#888" }}>RCTs found</div>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>
-                {papers.filter(p => p.pub_types.some(t => t.includes("Randomized"))).length}
-              </div>
-              <div style={{ fontSize: 12, color: "#888" }}>randomized trials</div>
-            </div>
-          </div>
+          {/* --- Verdict block --- */}
+          {verdict ? (
+            <>
+              <VerdictHeader verdict={verdict} />
+              {verdict.demographic_caveat && (
+                <DemographicCaveat text={verdict.demographic_caveat} />
+              )}
 
-          <details style={{ marginBottom: 20, fontSize: 13, color: "#888" }}>
-            <summary style={{ cursor: "pointer" }}>PubMed query used (click to expand)</summary>
-            <code style={{
-              display: "block", background: "#f5f5f5", borderRadius: 8,
-              padding: 10, marginTop: 8, wordBreak: "break-all", lineHeight: 1.6,
-            }}>
-              {queryUsed}
-            </code>
-          </details>
+              {/* Tabs for supporting / contradicting / neutral */}
+              {(() => {
+                const tabs: Array<{
+                  key: "supporting" | "contradicting" | "neutral";
+                  label: string;
+                  count: number;
+                  papers: CitedPaper[];
+                  accent: string;
+                }> = [
+                  {
+                    key: "supporting",
+                    label: "Supporting",
+                    count: verdict.supporting_papers.length,
+                    papers: verdict.supporting_papers,
+                    accent: "#10b981",
+                  },
+                  {
+                    key: "contradicting",
+                    label: "Contradicting",
+                    count: verdict.contradicting_papers.length,
+                    papers: verdict.contradicting_papers,
+                    accent: "#ef4444",
+                  },
+                  {
+                    key: "neutral",
+                    label: "Neutral / inconclusive",
+                    count: verdict.neutral_papers.length,
+                    papers: verdict.neutral_papers,
+                    accent: "#64748b",
+                  },
+                ];
+                const active = tabs.find((t) => t.key === stanceTab) || tabs[0];
 
-          {papers.length === 0 ? (
-            <Alert text="No papers were retrieved. Try rephrasing your claim or answering the questions differently." kind="warning" />
+                return (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 4,
+                        borderBottom: "1px solid #e2e8f0",
+                        marginBottom: 16,
+                      }}
+                    >
+                      {tabs.map((t) => {
+                        const isActive = t.key === stanceTab;
+                        return (
+                          <button
+                            key={t.key}
+                            onClick={() => setStanceTab(t.key)}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              borderBottom: isActive
+                                ? `3px solid ${t.accent}`
+                                : "3px solid transparent",
+                              padding: "10px 14px",
+                              marginBottom: -1,
+                              fontSize: 14,
+                              fontWeight: isActive ? 600 : 500,
+                              color: isActive ? "#0f172a" : "#64748b",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {t.label}{" "}
+                            <span
+                              style={{
+                                background: isActive ? t.accent : "#e2e8f0",
+                                color: isActive ? "white" : "#475569",
+                                padding: "1px 8px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                marginLeft: 4,
+                              }}
+                            >
+                              {t.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {active.papers.length === 0 ? (
+                      <div
+                        style={{
+                          background: "#f8fafc",
+                          borderRadius: 10,
+                          padding: 20,
+                          textAlign: "center",
+                          color: "#64748b",
+                          fontSize: 14,
+                        }}
+                      >
+                        No {active.label.toLowerCase()} papers cited in this verdict.
+                      </div>
+                    ) : (
+                      active.papers.map((p) => <CitedPaperCard key={p.paper_id} paper={p} />)
+                    )}
+                  </div>
+                );
+              })()}
+            </>
           ) : (
-            <div>
-              <h2 style={{ marginTop: 0 }}>Retrieved papers ({papers.length})</h2>
-              <p style={{ color: "#666", fontSize: 14, marginBottom: 16 }}>
-                Papers are ordered by PubMed's own relevance ranking. Click any title to open it on PubMed.
-              </p>
-              {papers.map((p) => <PaperCard key={p.pmid} paper={p} />)}
-            </div>
+            <Alert
+              text={
+                papers.length > 0
+                  ? "Synthesis couldn't produce a verdict for this claim. Showing raw retrieved papers below."
+                  : "No papers were retrieved and no verdict could be synthesized."
+              }
+              kind="warning"
+            />
           )}
 
-          <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
-            <button onClick={reset}
+          {/* --- Advanced / debug details (collapsed) --- */}
+          <details style={{ marginTop: 28, fontSize: 13, color: "#64748b" }}>
+            <summary style={{ cursor: "pointer", marginBottom: 8 }}>
+              Retrieval details
+            </summary>
+            <div
               style={{
-                padding: "12px 20px", borderRadius: 10,
-                border: "1px solid #ccc", background: "white",
-                fontSize: 15, cursor: "pointer",
-              }}>
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 12,
+                marginTop: 12,
+              }}
+            >
+              <div style={{ background: "#f8fafc", borderRadius: 10, padding: 14 }}>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>Papers retrieved</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
+                  {papers.length}
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                  of {totalHits} total hits
+                </div>
+              </div>
+              <div style={{ background: "#f8fafc", borderRadius: 10, padding: 14 }}>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>Retracted</div>
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 700,
+                    color: papers.some((p) => p.is_retracted) ? "#c2410c" : "#0f172a",
+                  }}
+                >
+                  {papers.filter((p) => p.is_retracted).length}
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>flagged papers</div>
+              </div>
+              <div style={{ background: "#f8fafc", borderRadius: 10, padding: 14 }}>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>RCTs found</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
+                  {
+                    papers.filter((p) =>
+                      p.pub_types.some((t) => t.includes("Randomized"))
+                    ).length
+                  }
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>randomized trials</div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>
+                PubMed query (final)
+              </div>
+              <code
+                style={{
+                  display: "block",
+                  background: "#f1f5f9",
+                  borderRadius: 8,
+                  padding: 10,
+                  wordBreak: "break-all",
+                  lineHeight: 1.6,
+                  fontSize: 12,
+                }}
+              >
+                {queryUsed || "—"}
+              </code>
+            </div>
+
+            {/* All retrieved papers list (pre-synthesis) — useful for debugging */}
+            {papers.length > 0 && (
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer" }}>
+                  All {papers.length} retrieved papers (pre-synthesis)
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  {papers.map((p) => (
+                    <PaperCard key={p.pmid} paper={p} />
+                  ))}
+                </div>
+              </details>
+            )}
+          </details>
+
+          <div style={{ marginTop: 28, display: "flex", gap: 12 }}>
+            <button
+              onClick={reset}
+              style={{
+                padding: "12px 20px",
+                borderRadius: 10,
+                border: "1px solid #cbd5e1",
+                background: "white",
+                fontSize: 15,
+                cursor: "pointer",
+              }}
+            >
               ← New claim
             </button>
-            <button onClick={() => setStage("questions")}
+            <button
+              onClick={() => setStage("questions")}
               style={{
-                padding: "12px 20px", borderRadius: 10,
-                border: "1px solid #ccc", background: "white",
-                fontSize: 15, cursor: "pointer",
-              }}>
+                padding: "12px 20px",
+                borderRadius: 10,
+                border: "1px solid #cbd5e1",
+                background: "white",
+                fontSize: 15,
+                cursor: "pointer",
+              }}
+            >
               ← Change answers
             </button>
           </div>
