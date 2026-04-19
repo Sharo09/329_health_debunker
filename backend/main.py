@@ -65,6 +65,9 @@ from src.synthesis import (
     analyze_claim,
 )
 
+# --- History / popular claims ---
+from src.history import HistoryEntry, PopularClaim, get_history, get_popular_claims
+
 # --- Shared schema ---
 from src.schemas import LockedPICO
 
@@ -626,3 +629,18 @@ def synthesize_claim(req: SynthesizeRequest):
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+#new endpoints for history and popular claims, which are read-only and don't require complex logic, so we can implement them directly here without needing to touch the src/ code.
+@app.get("/api/history", response_model=list[HistoryEntry])
+def history_endpoint(limit: int = 50) -> list[HistoryEntry]:
+    """Return the most recent analyses, newest first."""
+    try:
+        return get_history(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/popular-claims", response_model=list[PopularClaim])
+def popular_claims_endpoint() -> list[PopularClaim]:
+    """Return the curated list of commonly searched claims."""
+    return get_popular_claims()
