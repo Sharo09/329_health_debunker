@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   extractClaim,
   finalizeClaim,
+  synthesizeClaim,
   Question,
   Paper,
   CitedPaper,
@@ -305,9 +306,21 @@ export default function App() {
   const [totalHits, setTotalHits] = useState(0);
   const [warning, setWarning] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [verdictLoading, setVerdictLoading] = useState(false);
+  const [verdictError, setVerdictError] = useState<string | null>(null);
   const [stanceTab, setStanceTab] = useState<"supporting" | "contradicting" | "neutral">(
     "supporting"
   );
+
+  // Locked PICO summary (echoed back from /api/finalize) to display
+  // alongside the claim in the results header.
+  const [lockedPico, setLockedPico] = useState<{
+    food: string | null;
+    outcome: string | null;
+    population: string | null;
+    form: string | null;
+    component: string | null;
+  } | null>(null);
 
   const reset = () => {
     setStage("input");
@@ -320,6 +333,9 @@ export default function App() {
     setTotalHits(0);
     setWarning(null);
     setVerdict(null);
+    setVerdictLoading(false);
+    setVerdictError(null);
+    setLockedPico(null);
     setStanceTab("supporting");
   };
 
@@ -345,33 +361,65 @@ export default function App() {
     }
   };
 
-  // Step 2: send answers → run retrieval → show papers
+  // Step 2: streaming flow.
+  //   Phase A — /api/finalize: retrieval. Show papers as soon as it returns.
+  //   Phase B — /api/synthesize: verdict. Runs in the background; the
+  //             verdict block shows a placeholder spinner until it lands.
   const handleRunAnalysis = async () => {
     if (!partialPico) return;
     setError("");
+    setVerdict(null);
+    setVerdictError(null);
     setLoading(true);
+
+    let retrieval;
     try {
-      const data = await finalizeClaim({
+      retrieval = await finalizeClaim({
         partial_pico: partialPico,
         answers,
         age: age ? Number(age) : undefined,
       });
-      setPapers(data.papers);
-      setQueryUsed(data.query_used);
-      setTotalHits(data.total_pubmed_hits);
-      setWarning(data.warning || null);
-      setVerdict(data.verdict || null);
-      // Default the active stance tab to whichever category has cited papers.
-      if (data.verdict) {
-        if (data.verdict.supporting_papers.length > 0) setStanceTab("supporting");
-        else if (data.verdict.contradicting_papers.length > 0) setStanceTab("contradicting");
-        else setStanceTab("neutral");
-      }
-      setStage("results");
     } catch (e: any) {
       setError(e.message || "Something went wrong during retrieval.");
-    } finally {
       setLoading(false);
+      return;
+    }
+
+    // Phase A complete — show retrieved papers + locked PICO.
+    setPapers(retrieval.papers);
+    setQueryUsed(retrieval.query_used);
+    setTotalHits(retrieval.total_pubmed_hits);
+    setWarning(retrieval.warning || null);
+    setLockedPico({
+      food: retrieval.locked_food,
+      outcome: retrieval.locked_outcome,
+      population: retrieval.locked_population,
+      form: retrieval.locked_form,
+      component: retrieval.locked_component,
+    });
+    setStage("results");
+    setLoading(false);
+
+    if (retrieval.papers.length === 0) return;   // nothing to synthesize
+
+    // Phase B — verdict (background).
+    setVerdictLoading(true);
+    try {
+      const syn = await synthesizeClaim({
+        partial_pico: partialPico,
+        answers,
+        age: age ? Number(age) : undefined,
+        papers: retrieval.papers,
+      });
+      setVerdict(syn.verdict);
+      // Pick the most populated stance tab to default to.
+      if (syn.verdict.supporting_papers.length > 0) setStanceTab("supporting");
+      else if (syn.verdict.contradicting_papers.length > 0) setStanceTab("contradicting");
+      else setStanceTab("neutral");
+    } catch (e: any) {
+      setVerdictError(e.message || "Verdict synthesis failed.");
+    } finally {
+      setVerdictLoading(false);
     }
   };
 
@@ -532,9 +580,98 @@ export default function App() {
       {/* ---- STAGE: RESULTS ---- */}
       {stage === "results" && (
         <div>
+          {/* --- Claim + locked PICO header --- */}
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 12,
+              padding: 16,
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ fontSize: 12, color: "#64748b", letterSpacing: 0.5, fontWeight: 600 }}>
+              YOUR CLAIM
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 600, marginTop: 4, color: "#0f172a" }}>
+              "{claim}"
+            </div>
+            {lockedPico && (
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  fontSize: 12,
+                }}
+              >
+                {lockedPico.food && (
+                  <span style={{ background: "#e0f2fe", color: "#075985", padding: "3px 10px", borderRadius: 999 }}>
+                    food: {lockedPico.food}
+                  </span>
+                )}
+                {lockedPico.component && (
+                  <span style={{ background: "#ede9fe", color: "#5b21b6", padding: "3px 10px", borderRadius: 999 }}>
+                    component: {lockedPico.component}
+                  </span>
+                )}
+                {lockedPico.outcome && (
+                  <span style={{ background: "#fef3c7", color: "#854d0e", padding: "3px 10px", borderRadius: 999 }}>
+                    outcome: {lockedPico.outcome}
+                  </span>
+                )}
+                {lockedPico.population && (
+                  <span style={{ background: "#dcfce7", color: "#166534", padding: "3px 10px", borderRadius: 999 }}>
+                    population: {lockedPico.population}
+                  </span>
+                )}
+                {lockedPico.form && (
+                  <span style={{ background: "#f1f5f9", color: "#475569", padding: "3px 10px", borderRadius: 999 }}>
+                    form: {lockedPico.form}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
           {warning && <Alert text={warning} kind="warning" />}
 
-          {/* --- Verdict block --- */}
+          {/* --- Verdict block (streams in after retrieval) --- */}
+          {verdictLoading && !verdict && (
+            <div
+              style={{
+                background: "#f1f5f9",
+                border: "1px dashed #cbd5e1",
+                borderRadius: 12,
+                padding: 24,
+                marginBottom: 20,
+                textAlign: "center",
+              }}
+            >
+              <div
+                style={{
+                  display: "inline-block",
+                  width: 24,
+                  height: 24,
+                  border: "3px solid #cbd5e1",
+                  borderTop: "3px solid #475569",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              <div style={{ marginTop: 10, color: "#475569", fontSize: 14 }}>
+                Synthesizing verdict from {papers.length} paper{papers.length === 1 ? "" : "s"}…
+              </div>
+              <div style={{ marginTop: 4, color: "#94a3b8", fontSize: 12 }}>
+                ~20–30 seconds. You can read the papers below while this runs.
+              </div>
+            </div>
+          )}
+          {verdictError && !verdict && (
+            <Alert text={`Verdict synthesis failed: ${verdictError}`} kind="error" />
+          )}
           {verdict ? (
             <>
               <VerdictHeader verdict={verdict} />
@@ -644,14 +781,17 @@ export default function App() {
               })()}
             </>
           ) : (
-            <Alert
-              text={
-                papers.length > 0
-                  ? "Synthesis couldn't produce a verdict for this claim. Showing raw retrieved papers below."
-                  : "No papers were retrieved and no verdict could be synthesized."
-              }
-              kind="warning"
-            />
+            // No verdict yet AND not currently loading AND no error AND we have papers:
+            // show nothing extra (the spinner above is the "loading" UI).
+            // The fallback alert only shows when synthesis is over and a verdict
+            // couldn't be produced (covered by ``verdictError`` block above) or
+            // when we have no papers at all.
+            !verdictLoading && !verdictError && papers.length === 0 && (
+              <Alert
+                text="No papers were retrieved and no verdict could be synthesized."
+                kind="warning"
+              />
+            )
           )}
 
           {/* --- Advanced / debug details (collapsed) --- */}

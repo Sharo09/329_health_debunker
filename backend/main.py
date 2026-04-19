@@ -288,8 +288,34 @@ class FinalizeResponse(BaseModel):
     relaxation_level: int
     papers: List[PaperOut]
     warning: Optional[str] = None
-    # Station 4 verdict (new). May be null if synthesis failed or no papers.
+    # Station 4 verdict. Always None on /api/finalize — call /api/synthesize
+    # to get the verdict in a separate request (so the UI can show retrieved
+    # papers immediately while the slow verdict step runs).
     verdict: Optional[VerdictOut] = None
+    # Echo the locked PICO so the UI can display it without rebuilding.
+    raw_claim: str = ""
+    locked_food: Optional[str] = None
+    locked_outcome: Optional[str] = None
+    locked_population: Optional[str] = None
+    locked_form: Optional[str] = None
+    locked_component: Optional[str] = None
+
+
+class SynthesizeRequest(BaseModel):
+    """Synthesize a verdict from previously-retrieved papers.
+
+    Carries the same partial_pico + answers + age as /api/finalize so
+    the backend can rebuild the LockedPICO and derive the user profile
+    consistently. ``papers`` are the ones returned from /api/finalize.
+    """
+    partial_pico: Dict[str, Any]
+    answers: Dict[str, str] = Field(default_factory=dict)
+    age: Optional[int] = None
+    papers: List[PaperOut] = Field(default_factory=list)
+
+
+class SynthesizeResponse(BaseModel):
+    verdict: VerdictOut
 
 
 # ---------------------------------------------------------------------------
@@ -495,50 +521,9 @@ def finalize_claim(req: FinalizeRequest):
             "Results may be limited. Try broadening your query."
         )
 
-    # ---- Station 4 synthesis — verdict + cited-paper grouping ---------
-    verdict_out: Optional[VerdictOut] = None
-    if result.papers:
-        try:
-            score_papers_in = [
-                _retrieved_to_score_paper(p) for p in result.papers[:40]
-            ]
-            analysis = analyze_claim(
-                ScoreRequest(
-                    user_claim=locked.raw_claim,
-                    user_profile=_locked_to_user_profile(locked, req.age),
-                    papers=score_papers_in,
-                )
-            )
-            v = analysis.verdict
-
-            def _to_cited(cp) -> CitedPaperOut:
-                # ``cp.applies_to`` items are DemographicGroup literals, already strings.
-                return CitedPaperOut(
-                    paper_id=cp.paper_id,
-                    title=cp.title,
-                    url=cp.url,
-                    stance=cp.stance,
-                    relevance_score=cp.relevance_score,
-                    applies_to=[str(x) for x in (cp.applies_to or [])],
-                    demographic_match=bool(cp.demographic_match),
-                    one_line_summary=cp.one_line_summary,
-                )
-
-            verdict_out = VerdictOut(
-                verdict=v.verdict,
-                confidence_percent=v.confidence_percent,
-                verdict_reasoning=v.verdict_reasoning,
-                demographic_caveat=v.demographic_caveat,
-                supporting_papers=[_to_cited(cp) for cp in v.supporting_papers],
-                contradicting_papers=[_to_cited(cp) for cp in v.contradicting_papers],
-                neutral_papers=[_to_cited(cp) for cp in v.neutral_papers],
-            )
-        except Exception as e:
-            # Don't fail the whole request if synthesis blows up — still
-            # return the retrieved papers so the UI has something to show.
-            import logging
-            logging.getLogger(__name__).warning("Synthesis failed: %s", e)
-
+    # /api/finalize is now retrieval-only. The frontend calls /api/synthesize
+    # in a second request so it can show retrieved papers immediately while
+    # the (slow) verdict step runs in the background.
     return FinalizeResponse(
         below_threshold=below_threshold,
         total_pubmed_hits=total_pubmed_hits,
@@ -546,7 +531,91 @@ def finalize_claim(req: FinalizeRequest):
         relaxation_level=relaxation_proxy,
         papers=papers_out,
         warning=warning,
-        verdict=verdict_out,
+        verdict=None,
+        raw_claim=locked.raw_claim,
+        locked_food=locked.food,
+        locked_outcome=locked.outcome,
+        locked_population=locked.population,
+        locked_form=locked.form,
+        locked_component=locked.component,
+    )
+
+
+def _to_cited_paper_out(cp) -> CitedPaperOut:
+    """Convert a Station 4 CitedPaper to the API response shape."""
+    return CitedPaperOut(
+        paper_id=cp.paper_id,
+        title=cp.title,
+        url=cp.url,
+        stance=cp.stance,
+        relevance_score=cp.relevance_score,
+        applies_to=[str(x) for x in (cp.applies_to or [])],
+        demographic_match=bool(cp.demographic_match),
+        one_line_summary=cp.one_line_summary,
+    )
+
+
+@app.post("/api/synthesize", response_model=SynthesizeResponse)
+def synthesize_claim(req: SynthesizeRequest):
+    """Station 4: synthesize a verdict from previously-retrieved papers.
+
+    The frontend hits this AFTER /api/finalize so retrieved papers can
+    be shown immediately while the verdict cooks in the background.
+    """
+    if not req.papers:
+        raise HTTPException(
+            status_code=422, detail="No papers provided to synthesize."
+        )
+
+    try:
+        locked = _build_locked_pico(req.partial_pico, req.answers, req.age)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Could not rebuild locked PICO: {e}")
+
+    # PaperOut → ScorePaper for Station 4 input.
+    score_papers_in = []
+    for p in req.papers[:40]:
+        abstract = p.abstract or p.title
+        sentences = [s.strip() for s in abstract.split(".") if s.strip()]
+        if len(sentences) >= 2:
+            claim_text = sentences[-2] + ". " + sentences[-1] + "."
+        elif sentences:
+            claim_text = sentences[-1] + "."
+        else:
+            claim_text = abstract[:300]
+        score_papers_in.append(
+            ScorePaper(
+                paper_id=p.pmid,
+                title=p.title,
+                extracted_claim=claim_text,
+                url=p.pubmed_url,
+                population_studied=None,
+                nutritional_components=[],
+            )
+        )
+
+    try:
+        analysis = analyze_claim(
+            ScoreRequest(
+                user_claim=locked.raw_claim,
+                user_profile=_locked_to_user_profile(locked, req.age),
+                papers=score_papers_in,
+            )
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Synthesis failed: {e}")
+
+    v = analysis.verdict
+    return SynthesizeResponse(
+        verdict=VerdictOut(
+            verdict=v.verdict,
+            confidence_percent=v.confidence_percent,
+            verdict_reasoning=v.verdict_reasoning,
+            demographic_caveat=v.demographic_caveat,
+            supporting_papers=[_to_cited_paper_out(cp) for cp in v.supporting_papers],
+            contradicting_papers=[_to_cited_paper_out(cp) for cp in v.contradicting_papers],
+            neutral_papers=[_to_cited_paper_out(cp) for cp in v.neutral_papers],
+        )
     )
 
 

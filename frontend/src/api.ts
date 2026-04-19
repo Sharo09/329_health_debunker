@@ -54,7 +54,17 @@ export type FinalizeResponse = {
   relaxation_level: number;
   papers: Paper[];
   warning?: string | null;
-  verdict: Verdict | null;
+  verdict: Verdict | null;            // always null on /api/finalize now
+  raw_claim: string;
+  locked_food: string | null;
+  locked_outcome: string | null;
+  locked_population: string | null;
+  locked_form: string | null;
+  locked_component: string | null;
+};
+
+export type SynthesizeResponse = {
+  verdict: Verdict;
 };
 
 // BASE_URL is empty string in production (same origin) and proxied in dev
@@ -81,6 +91,30 @@ export async function finalizeClaim(payload: {
   age?: number;
 }): Promise<FinalizeResponse> {
   const res = await fetch(`${BASE_URL}/api/finalize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Hits Station 4 (synthesis) on previously-retrieved papers.
+ * Run AFTER finalizeClaim so the user sees retrieved papers immediately
+ * while this slow request (~25s) cooks the verdict in the background.
+ */
+export async function synthesizeClaim(payload: {
+  partial_pico: Record<string, any>;
+  answers: Record<string, string>;
+  age?: number;
+  papers: Paper[];
+}): Promise<SynthesizeResponse> {
+  const res = await fetch(`${BASE_URL}/api/synthesize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
