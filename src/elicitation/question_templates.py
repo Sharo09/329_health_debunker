@@ -9,20 +9,53 @@ Each template is a dict with:
                    whose value is "unknown", the elicitor treats it as an
                    "I don't know" answer.
     allow_other:   whether to offer a free-text "Other" fallback
+    role:          "pre_retrieval" if the answer materially narrows the
+                   PubMed query, "stratifier" if the answer is used
+                   post-retrieval to partition/weight papers. Filled in
+                   at lookup time from DIMENSION_ROLE; template literals
+                   below don't need to carry it.
 
 Templates specific to (slot, food) are preferred; if none exists,
 GENERIC_TEMPLATES[slot] is used. Keys for the food component of the
 tuple are lowercased canonical forms matching priority_table.py.
+
+Stratifier questions get a suffix hint appended at render time so the
+user understands their answer organises results rather than narrowing
+the search. See ``render_question_text``.
 """
 
 from typing import TypedDict
 
+from src.elicitation.priority_table import SlotRole, get_slot_role
 
-class QuestionTemplate(TypedDict):
+
+class QuestionTemplate(TypedDict, total=False):
+    # ``total=False`` because the literals below don't carry ``role`` —
+    # it's injected at ``get_question`` lookup time from DIMENSION_ROLE.
+    # All consumers that call ``get_question`` can rely on ``role``
+    # being present on the returned template.
     text: str
     options: list[str]
     option_values: list[str]
     allow_other: bool
+    role: SlotRole
+
+
+STRATIFIER_HINT = (
+    " (We'll search broadly and group the results by your answer, so "
+    "answering \"not sure\" won't narrow the evidence.)"
+)
+
+
+def render_question_text(template: QuestionTemplate) -> str:
+    """Return the final text shown to the user.
+
+    Appends the stratifier-hint suffix when the template's slot role is
+    ``stratifier``. Pre-retrieval questions are returned unchanged.
+    """
+    if template.get("role") == "stratifier":
+        return template["text"] + STRATIFIER_HINT
+    return template["text"]
 
 
 QUESTION_TEMPLATES: dict[tuple[str, str], QuestionTemplate] = {
@@ -644,15 +677,40 @@ def get_question(slot: str, food: str | None) -> QuestionTemplate:
     Food lookup is case-insensitive with whitespace trimming. Raises
     KeyError if no specific template exists and the slot has no generic
     fallback either.
+
+    The returned template:
+
+    - carries a ``role`` field derived from ``DIMENSION_ROLE`` in
+      priority_table.py — so callers never have to duplicate the
+      classification logic.
+    - for stratifier slots, has the stratifier-hint suffix already
+      appended to ``text`` so UI adapters can show it unchanged.
+
+    The module-level dicts are never mutated — every call returns a
+    fresh copy with role/text injected.
     """
+    base: QuestionTemplate | None = None
+
     if food:
         key = (slot, food.strip().lower())
         if key in QUESTION_TEMPLATES:
-            return QUESTION_TEMPLATES[key]
+            base = QUESTION_TEMPLATES[key]
 
-    if slot in GENERIC_TEMPLATES:
-        return GENERIC_TEMPLATES[slot]
+    if base is None and slot in GENERIC_TEMPLATES:
+        base = GENERIC_TEMPLATES[slot]
 
-    raise KeyError(
-        f"No template defined for slot={slot!r} (food={food!r}) and no generic fallback."
-    )
+    if base is None:
+        raise KeyError(
+            f"No template defined for slot={slot!r} (food={food!r}) and no generic fallback."
+        )
+
+    role: SlotRole = get_slot_role(slot)
+    enriched: QuestionTemplate = {
+        "text": base["text"],
+        "options": list(base["options"]),
+        "option_values": list(base["option_values"]),
+        "allow_other": base["allow_other"],
+        "role": role,
+    }
+    enriched["text"] = render_question_text(enriched)
+    return enriched

@@ -30,22 +30,52 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_LOG_FILE = "logs/synthesis.jsonl"
 
+from pydantic import BaseModel, Field
+
 from src.synthesis.schemas import (
     AnalysisResponse,
+    CitedPaper,
     Paper,
     PaperScoreResult,
+    PaperStratification,
     ScoreList,
     ScoreRequest,
     ScoreResponse,
+    StratumBucket,
     UserProfile,
+    Verdict,
     VerdictResult,
 )
+
+
+# Narrow subset of VerdictResult used as Gemini's response schema.
+# Gemini rejects ``additionalProperties`` in the JSON schema, which
+# Pydantic emits for every ``dict[K, V]`` field. ``StratumBucket`` has
+# four such dicts, so including ``stratum_buckets`` in the LLM-facing
+# schema fails. We compute the Patch B fields deterministically after
+# the LLM returns and splice them onto the full VerdictResult.
+class _VerdictResultLLM(BaseModel):
+    verdict: Verdict
+    confidence_percent: float
+    verdict_reasoning: str
+    demographic_caveat: str | None = None
+    supporting_papers: list[CitedPaper] = Field(default_factory=list)
+    contradicting_papers: list[CitedPaper] = Field(default_factory=list)
+    neutral_papers: list[CitedPaper] = Field(default_factory=list)
+from src.synthesis.stratification import (
+    build_paper_stratifications,
+    build_stratum_buckets,
+    compose_stratum_reasoning,
+    compute_stratum_verdicts,
+    detect_generalisation_warnings,
+)
+from src.synthesis.stratifier import extract_values_in_parallel
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.1-pro-preview"
 
 # Cached Client: creating a new genai.Client per call can leave earlier
 # instances (e.g., Station 1's extraction client) in a closed state,
@@ -278,6 +308,27 @@ DEMOGRAPHIC CAVEAT
   but user is a child), note the gap. Set demographic_caveat=null
   if no meaningful gap exists.
 
+STRATIFIED EVIDENCE (Patch B)
+=============================
+When the user stated a specific dose / form / frequency / population,
+papers are pre-labelled with how they relate to the user's stated
+value (matches / higher / lower / different / unreported). Each
+paper's label for each slot is listed in its block below when
+available.
+
+Weighting rule: papers in the "matches" stratum for the user's
+stated slot value are the most directly applicable. When papers in
+the matching stratum disagree with papers in other strata, the
+matching stratum wins FOR THE USER'S SPECIFIC CLAIM. Mention this
+explicitly in verdict_reasoning when it happens — e.g. "studies at
+dietary doses support the claim; studies at pharmacological
+supplement doses contradict, but the latter don't address the
+user's question."
+
+When generalisation warnings are provided, weave the worst one into
+verdict_reasoning so the user sees why matching-stratum evidence
+may be thin.
+
 Return a single JSON object matching the provided schema.
 """
 
@@ -287,6 +338,9 @@ def _build_verdict_message(
     user_profile: UserProfile,
     scored: list[PaperScoreResult],
     papers_by_id: dict[str, Paper],
+    stratifications: list[PaperStratification] | None = None,
+    generalisation_warnings: list[str] | None = None,
+    user_pico_summary: str | None = None,
 ) -> str:
     lines = [
         f"USER CLAIM: {user_claim}",
@@ -294,9 +348,21 @@ def _build_verdict_message(
         "USER PROFILE:",
         f"  Age: {user_profile.age if user_profile.age is not None else 'unknown'}",
         f"  Demographic group: {user_profile.demographic_group}",
-        "",
-        "SCORED PAPERS:",
     ]
+    if user_pico_summary:
+        lines.extend(["", "USER STATED VALUES:", f"  {user_pico_summary}"])
+
+    if generalisation_warnings:
+        lines.append("")
+        lines.append("GENERALISATION WARNINGS:")
+        for w in generalisation_warnings:
+            lines.append(f"  - {w}")
+
+    strat_by_id: dict[str, PaperStratification] = {}
+    if stratifications:
+        strat_by_id = {s.paper_id: s for s in stratifications}
+
+    lines.extend(["", "SCORED PAPERS:"])
     for s in scored:
         p = papers_by_id.get(s.paper_id)
         lines.append(f"\n--- {s.paper_id} ---")
@@ -307,7 +373,26 @@ def _build_verdict_message(
         lines.append(f"applies_to: {s.applies_to}")
         lines.append(f"demographic_match: {s.demographic_match}")
         lines.append(f"extracted_claim: {p.extracted_claim if p else ''}")
+        strat = strat_by_id.get(s.paper_id)
+        if strat is not None:
+            lines.append(
+                f"strata: dose={strat.dose_match}, form={strat.form_match}, "
+                f"frequency={strat.frequency_match}, population={strat.population_match}"
+            )
+            lines.append(f"overall_applicability: {strat.overall_applicability}")
     return "\n".join(lines)
+
+
+def _user_pico_summary(locked_pico) -> str | None:
+    """Render the stratifier slots the user actually answered."""
+    if locked_pico is None:
+        return None
+    parts: list[str] = []
+    for slot in ("dose", "form", "frequency", "population"):
+        val = getattr(locked_pico, slot, None)
+        if val:
+            parts.append(f"{slot}={val}")
+    return "; ".join(parts) if parts else None
 
 
 def generate_verdict(
@@ -317,17 +402,27 @@ def generate_verdict(
     papers_by_id: dict[str, Paper],
     model: str = DEFAULT_MODEL,
     enable_thinking: bool = True,
+    stratifications: list[PaperStratification] | None = None,
+    generalisation_warnings: list[str] | None = None,
+    locked_pico=None,
 ) -> VerdictResult:
     """Synthesise scored papers into a final verdict with confidence %.
 
     Verdict synthesis benefits from reasoning across papers — keep
     thinking enabled by default. Set ``enable_thinking=False`` to trade
     some nuance for ~30% faster response.
+
+    When ``stratifications`` / ``generalisation_warnings`` / ``locked_pico``
+    are provided (Patch B), the verdict prompt sees per-paper stratum
+    labels and the explicit user-stated slot values so it can weight
+    matching-stratum papers more heavily.
     """
     config_kwargs = dict(
         temperature=0.0,
         response_mime_type="application/json",
-        response_schema=VerdictResult,
+        # Narrow schema — stratification fields are populated in
+        # analyze_claim *after* this call. See _VerdictResultLLM above.
+        response_schema=_VerdictResultLLM,
         system_instruction=_VERDICT_SYSTEM_PROMPT,
     )
     if not enable_thinking:
@@ -336,11 +431,17 @@ def generate_verdict(
     response = _client().models.generate_content(
         model=model,
         contents=_build_verdict_message(
-            user_claim, user_profile, scored, papers_by_id
+            user_claim, user_profile, scored, papers_by_id,
+            stratifications=stratifications,
+            generalisation_warnings=generalisation_warnings,
+            user_pico_summary=_user_pico_summary(locked_pico),
         ),
         config=types.GenerateContentConfig(**config_kwargs),
     )
-    return VerdictResult.model_validate_json(response.text)
+    core = _VerdictResultLLM.model_validate_json(response.text)
+    # Expand into the full VerdictResult; Patch B list fields default
+    # to empty and get overwritten by analyze_claim.
+    return VerdictResult(**core.model_dump())
 
 
 # ---------------------------------------------------------------------------
@@ -351,17 +452,75 @@ def analyze_claim(
     request: ScoreRequest,
     model: str = DEFAULT_MODEL,
     log_file: str | None = None,
+    locked_pico=None,
+    extractor_llm=None,
 ) -> AnalysisResponse:
-    """Full pipeline: score → synthesize. Writes an audit record to jsonl."""
+    """Full pipeline: score → stratify → synthesize.
+
+    When ``locked_pico`` is provided, Station 1.5+2 stratifier slot
+    values drive a per-paper value extraction (LLM) + deterministic
+    stratum assignment + generalisation warnings. The resulting
+    stratifications, stratum buckets, and warnings are attached to
+    the verdict so the results UI can render the stratified view.
+
+    When ``locked_pico`` is None (back-compat), the pipeline behaves
+    exactly as before: score → verdict, with empty stratification
+    fields on the verdict object.
+
+    ``extractor_llm`` is an optional ``LLMClient`` used for the
+    stratifier extraction pass. Defaults to a fresh Gemini Flash
+    client with thinking disabled — cheap, fast, bounded.
+    """
     scored_response = score_papers(request, model=model)
     papers_by_id = {p.paper_id: p for p in request.papers}
+
+    stratifications: list[PaperStratification] = []
+    buckets: list[StratumBucket] = []
+    warnings: list[str] = []
+
+    if locked_pico is not None:
+        from src.extraction.llm_client import LLMClient as _LLMClient
+        llm = extractor_llm or _LLMClient(
+            model=model, thinking_budget=0
+        )
+        extracted_values = extract_values_in_parallel(
+            request.papers, llm, max_workers=4
+        )
+        stratifications = build_paper_stratifications(
+            extracted_values, locked_pico
+        )
+        buckets = build_stratum_buckets(
+            scored_response.results, stratifications, locked_pico
+        )
+        for b in buckets:
+            b.stratum_verdicts = compute_stratum_verdicts(
+                b, scored_response.results
+            )
+            b.stratum_reasoning = compose_stratum_reasoning(
+                b, scored_response.results
+            )
+        warnings = detect_generalisation_warnings(
+            stratifications, locked_pico
+        )
+
     verdict = generate_verdict(
         user_claim=request.user_claim,
         user_profile=request.user_profile,
         scored=scored_response.results,
         papers_by_id=papers_by_id,
         model=model,
+        stratifications=stratifications or None,
+        generalisation_warnings=warnings or None,
+        locked_pico=locked_pico,
     )
+    # Attach the stratified view to the verdict object for the UI to
+    # render. The VerdictResult literal returned by the LLM defaults
+    # these fields to empty lists; we overwrite with our deterministic
+    # computation.
+    verdict.paper_stratifications = stratifications
+    verdict.stratum_buckets = buckets
+    verdict.generalisation_warnings = warnings
+
     result = AnalysisResponse(
         user_claim=request.user_claim,
         user_profile=request.user_profile,
@@ -408,6 +567,15 @@ def _log_synthesis(
         "cited_supporting": [p.paper_id for p in result.verdict.supporting_papers],
         "cited_contradicting": [p.paper_id for p in result.verdict.contradicting_papers],
         "cited_neutral": [p.paper_id for p in result.verdict.neutral_papers],
+        # Patch B — audit trail for stratified synthesis. Empty when
+        # analyze_claim ran without a locked_pico.
+        "stratifications": [
+            s.model_dump() for s in result.verdict.paper_stratifications
+        ],
+        "stratum_buckets": [
+            b.model_dump() for b in result.verdict.stratum_buckets
+        ],
+        "generalisation_warnings": list(result.verdict.generalisation_warnings),
     }
     log_dir = os.path.dirname(log_file)
     if log_dir:

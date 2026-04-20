@@ -3,7 +3,9 @@ import pytest
 from src.elicitation.priority_table import (
     DEFAULT_PRIORITY,
     DIMENSION_PRIORITY,
+    DIMENSION_ROLE,
     get_priority,
+    get_slot_role,
 )
 
 
@@ -89,3 +91,50 @@ def test_all_ten_demo_foods_present():
         "dairy milk",
     }
     assert expected <= set(DIMENSION_PRIORITY.keys())
+
+
+# ---------- Patch B Task 1 — slot role annotations ----------
+
+
+@pytest.mark.parametrize("slot", ["food", "outcome", "component"])
+def test_pre_retrieval_slots(slot):
+    """Slots that materially narrow the PubMed query."""
+    assert DIMENSION_ROLE[slot] == "pre_retrieval"
+    assert get_slot_role(slot) == "pre_retrieval"
+
+
+@pytest.mark.parametrize("slot", ["dose", "form", "frequency", "population"])
+def test_stratifier_slots(slot):
+    """Slots that are used post-retrieval to partition papers, not to narrow."""
+    assert DIMENSION_ROLE[slot] == "stratifier"
+    assert get_slot_role(slot) == "stratifier"
+
+
+def test_every_priority_slot_has_a_role():
+    """Every slot that can appear in a priority list must have a role.
+
+    Prevents silent drift where a new slot is added to DIMENSION_PRIORITY
+    without deciding how downstream synthesis should consume it.
+    """
+    seen: set[str] = set()
+    for slots in DIMENSION_PRIORITY.values():
+        seen.update(slots)
+    seen.update(DEFAULT_PRIORITY)
+    for slot in seen:
+        assert slot in DIMENSION_ROLE, (
+            f"slot {slot!r} is in a priority list but has no role in "
+            f"DIMENSION_ROLE — decide if it narrows the query or stratifies."
+        )
+
+
+def test_dimension_role_values_are_valid():
+    for slot, role in DIMENSION_ROLE.items():
+        assert role in ("pre_retrieval", "stratifier"), (
+            f"{slot!r} has invalid role {role!r}"
+        )
+
+
+def test_get_slot_role_unknown_falls_back_to_stratifier():
+    """Unknown slot → stratifier is the safe default (never narrows query)."""
+    assert get_slot_role("unknown_slot") == "stratifier"
+    assert get_slot_role("") == "stratifier"

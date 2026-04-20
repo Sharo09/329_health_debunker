@@ -26,6 +26,19 @@ DemographicGroup = Literal[
 
 Verdict = Literal["supported", "contradicted", "insufficient_evidence"]
 
+# ---- Stratification (Patch B) ---------------------------------------------
+#
+# How a single paper's studied value relates to the user's stated value
+# for one stratifier slot. Produced by ``src.synthesis.stratum_assigner``.
+StratumMatch = Literal[
+    "matches",         # paper's value matches the user's stated value
+    "higher",          # paper studied more / larger than the user asked about
+    "lower",           # paper studied less / smaller than the user asked about
+    "different",       # categorically different (e.g., form mismatch)
+    "unreported",      # paper doesn't state its value for this slot
+    "not_applicable",  # user didn't state a value for this slot
+]
+
 
 # ---------------------------------------------------------------------------
 # Inputs
@@ -58,6 +71,15 @@ class Paper(BaseModel):
     nutritional_components: list[str] = Field(
         default_factory=list,
         description="Nutritional/chemical components relevant to this paper (provided by upstream agent)",
+    )
+    abstract: str = Field(
+        default="",
+        description=(
+            "Full abstract text, used by the stratifier to extract dose, form, "
+            "frequency, and population values actually studied. Optional for "
+            "backwards compatibility; when empty, the stratifier falls back "
+            "to title + extracted_claim (thinner but not zero)."
+        ),
     )
 
 
@@ -154,6 +176,48 @@ class CitedPaper(BaseModel):
     )
 
 
+StratifierSlot = Literal["dose", "form", "frequency", "population"]
+OverallApplicability = Literal["direct", "partial", "generalisation"]
+StratumVerdict = Literal["supported", "contradicted", "insufficient_evidence", "empty"]
+
+
+class PaperStratification(BaseModel):
+    """How a single paper relates to the user's stated PICO values.
+
+    Populated in Station 4 from the paper-value extractor (stratifier)
+    output + the user's LockedPICO. ``overall_applicability`` is a
+    compact rollup suitable for a single badge on the results UI.
+    """
+
+    paper_id: str
+    dose_match: StratumMatch = "not_applicable"
+    dose_studied: str | None = None
+    form_match: StratumMatch = "not_applicable"
+    form_studied: str | None = None
+    frequency_match: StratumMatch = "not_applicable"
+    frequency_studied: str | None = None
+    population_match: StratumMatch = "not_applicable"
+    population_studied: str | None = None
+    overall_applicability: OverallApplicability = "direct"
+    applicability_reasoning: str = ""
+
+
+class StratumBucket(BaseModel):
+    """Papers grouped by their relationship to the user's value for one slot.
+
+    Only slots where the user stated a value produce a bucket. Each
+    stratum (matches / higher / lower / different / unreported) gets a
+    list of paper_ids, a count, and a mini-verdict over just that slice.
+    """
+
+    slot: StratifierSlot
+    user_value: str | None
+    strata: dict[StratumMatch, list[str]] = Field(default_factory=dict)
+    counts: dict[StratumMatch, int] = Field(default_factory=dict)
+    stratum_verdicts: dict[StratumMatch, StratumVerdict] = Field(default_factory=dict)
+    stratum_reasoning: dict[StratumMatch, str] = Field(default_factory=dict)
+
+
 class VerdictResult(BaseModel):
     verdict: Verdict = Field(
         ...,
@@ -200,6 +264,13 @@ class VerdictResult(BaseModel):
         default_factory=list,
         description="Relevant papers that are neutral or inconclusive (relevance_score ≥ 0.4)",
     )
+
+    # Elicitation Patch B — stratified view. All three default to empty
+    # for backwards compatibility with callers that don't pass a
+    # LockedPICO into ``analyze_claim``.
+    paper_stratifications: list[PaperStratification] = Field(default_factory=list)
+    stratum_buckets: list[StratumBucket] = Field(default_factory=list)
+    generalisation_warnings: list[str] = Field(default_factory=list)
 
 
 class AnalysisResponse(BaseModel):

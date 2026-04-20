@@ -1,11 +1,13 @@
 import pytest
 
-from src.elicitation.priority_table import DIMENSION_PRIORITY
+from src.elicitation.priority_table import DIMENSION_PRIORITY, DIMENSION_ROLE
 from src.elicitation.question_templates import (
     FALLBACK_VALUE,
     GENERIC_TEMPLATES,
     QUESTION_TEMPLATES,
+    STRATIFIER_HINT,
     get_question,
+    render_question_text,
 )
 
 
@@ -105,13 +107,18 @@ def test_get_question_whitespace_trimmed():
 
 def test_get_question_falls_back_to_generic():
     # (population, zucchini) has no specific template; should return the
-    # generic population template.
+    # generic population template (copied, with role injected).
     result = get_question("population", "zucchini")
-    assert result is GENERIC_TEMPLATES["population"]
+    base = GENERIC_TEMPLATES["population"]
+    assert result["option_values"] == base["option_values"]
+    assert result["options"] == base["options"]
 
 
 def test_get_question_generic_when_food_is_none():
-    assert get_question("outcome", None) is GENERIC_TEMPLATES["outcome"]
+    result = get_question("outcome", None)
+    base = GENERIC_TEMPLATES["outcome"]
+    assert result["option_values"] == base["option_values"]
+    assert result["options"] == base["options"]
 
 
 def test_get_question_raises_when_slot_unknown_and_no_generic():
@@ -122,3 +129,85 @@ def test_get_question_raises_when_slot_unknown_and_no_generic():
 def test_get_question_unknown_food_unknown_slot_raises():
     with pytest.raises(KeyError):
         get_question("not_a_real_slot", "zucchini")
+
+
+# ---------- Patch B Task 2 — role + stratifier hint ----------
+
+
+def _all_slots_used() -> set[str]:
+    used = {slot for slot, _ in QUESTION_TEMPLATES.keys()}
+    used.update(GENERIC_TEMPLATES.keys())
+    return used
+
+
+@pytest.mark.parametrize("slot", sorted(_all_slots_used()))
+def test_get_question_has_role_field(slot):
+    """Every template returned by get_question carries a role."""
+    t = get_question(slot, None)
+    assert "role" in t
+    assert t["role"] in ("pre_retrieval", "stratifier")
+    assert t["role"] == DIMENSION_ROLE[slot]
+
+
+@pytest.mark.parametrize(
+    "slot,food",
+    [(slot, food) for (slot, food) in QUESTION_TEMPLATES.keys()],
+)
+def test_food_specific_template_role_matches_slot(slot, food):
+    t = get_question(slot, food)
+    assert t["role"] == DIMENSION_ROLE[slot]
+
+
+@pytest.mark.parametrize(
+    "slot,food",
+    [(slot, food) for (slot, food) in QUESTION_TEMPLATES.keys()
+     if DIMENSION_ROLE.get(slot) == "stratifier"],
+)
+def test_stratifier_templates_have_hint_in_text(slot, food):
+    """Every stratifier template's rendered text ends with the hint."""
+    t = get_question(slot, food)
+    assert t["text"].endswith(STRATIFIER_HINT), (
+        f"stratifier template ({slot!r}, {food!r}) didn't get the hint "
+        f"suffix. Got: {t['text']!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "slot,food",
+    [(slot, food) for (slot, food) in QUESTION_TEMPLATES.keys()
+     if DIMENSION_ROLE.get(slot) == "pre_retrieval"],
+)
+def test_pre_retrieval_templates_are_unchanged(slot, food):
+    """Pre-retrieval templates' rendered text matches the literal — no hint."""
+    t = get_question(slot, food)
+    base = QUESTION_TEMPLATES[(slot, food)]
+    assert t["text"] == base["text"]
+    assert STRATIFIER_HINT not in t["text"]
+
+
+@pytest.mark.parametrize("slot", sorted(GENERIC_TEMPLATES.keys()))
+def test_generic_template_hint_matches_role(slot):
+    t = get_question(slot, None)
+    if DIMENSION_ROLE[slot] == "stratifier":
+        assert t["text"].endswith(STRATIFIER_HINT)
+    else:
+        assert t["text"] == GENERIC_TEMPLATES[slot]["text"]
+        assert STRATIFIER_HINT not in t["text"]
+
+
+def test_render_question_text_standalone():
+    """render_question_text appends the hint only for stratifier templates."""
+    stratifier = {"text": "Q?", "role": "stratifier"}  # type: ignore[typeddict-item]
+    pre = {"text": "Q?", "role": "pre_retrieval"}  # type: ignore[typeddict-item]
+    assert render_question_text(stratifier).endswith(STRATIFIER_HINT)  # type: ignore[arg-type]
+    assert render_question_text(pre) == "Q?"  # type: ignore[arg-type]
+
+
+def test_get_question_does_not_mutate_source():
+    """Calling get_question shouldn't append hints to the module-level dicts."""
+    before = QUESTION_TEMPLATES[("dose", "coffee")]["text"]
+    _ = get_question("dose", "coffee")
+    _ = get_question("dose", "coffee")
+    after = QUESTION_TEMPLATES[("dose", "coffee")]["text"]
+    assert after == before
+    assert STRATIFIER_HINT not in after
