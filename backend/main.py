@@ -48,6 +48,10 @@ from src.extraction.extractor import ClaimExtractor
 from src.extraction.llm_client import LLMClient
 from src.extraction.schemas import PartialPICO, SlotExtraction
 
+# --- Station 1.5 imports ---
+from src.plausibility import PlausibilityAgent
+from src.schemas import PartialPICO as FlatPartialPICO
+
 # --- Station 2 imports ---
 from src.elicitation.priority_table import get_priority
 from src.elicitation.question_templates import get_question
@@ -270,6 +274,31 @@ class CitedPaperOut(BaseModel):
     one_line_summary: str = ""
 
 
+class PaperStratificationOut(BaseModel):
+    """Per-paper stratification labels (Elicitation Patch B)."""
+    paper_id: str
+    dose_match: str
+    dose_studied: Optional[str] = None
+    form_match: str
+    form_studied: Optional[str] = None
+    frequency_match: str
+    frequency_studied: Optional[str] = None
+    population_match: str
+    population_studied: Optional[str] = None
+    overall_applicability: str           # direct | partial | generalisation
+    applicability_reasoning: str = ""
+
+
+class StratumBucketOut(BaseModel):
+    """Papers grouped by their match for one stratifier slot."""
+    slot: str                            # dose | form | frequency | population
+    user_value: Optional[str] = None
+    strata: Dict[str, List[str]] = Field(default_factory=dict)
+    counts: Dict[str, int] = Field(default_factory=dict)
+    stratum_verdicts: Dict[str, str] = Field(default_factory=dict)
+    stratum_reasoning: Dict[str, str] = Field(default_factory=dict)
+
+
 class VerdictOut(BaseModel):
     """Station 4 synthesis output, shaped for the frontend."""
     verdict: str                   # supported | contradicted | insufficient_evidence
@@ -279,6 +308,12 @@ class VerdictOut(BaseModel):
     supporting_papers: List[CitedPaperOut] = Field(default_factory=list)
     contradicting_papers: List[CitedPaperOut] = Field(default_factory=list)
     neutral_papers: List[CitedPaperOut] = Field(default_factory=list)
+    # Patch B — stratified view. Empty when the synthesis ran without a
+    # locked PICO (shouldn't happen on /api/synthesize but stays empty
+    # rather than forcing the UI to null-check).
+    paper_stratifications: List[PaperStratificationOut] = Field(default_factory=list)
+    stratum_buckets: List[StratumBucketOut] = Field(default_factory=list)
+    generalisation_warnings: List[str] = Field(default_factory=list)
 
 
 class FinalizeResponse(BaseModel):
@@ -316,6 +351,36 @@ class SynthesizeRequest(BaseModel):
 
 class SynthesizeResponse(BaseModel):
     verdict: VerdictOut
+
+
+# ---- Station 1.5 (plausibility) request/response shapes -----------------
+
+class PlausibilityRequest(BaseModel):
+    """Flat PartialPICO from Station 1's ``to_flat()`` output."""
+    partial_pico: Dict[str, Any]
+
+
+class PlausibilityFailureOut(BaseModel):
+    failure_type: str                    # F1_dose | F2_feasibility | F3_mechanism | F4_frame
+    severity: str                        # blocking | warning
+    reasoning: str
+    supporting_data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ParsedDoseOut(BaseModel):
+    numeric_value: Optional[float] = None
+    unit: Optional[str] = None
+    time_basis: Optional[str] = None
+    confidence: str = "not_a_dose"
+    raw_source: str = ""
+
+
+class PlausibilityResponse(BaseModel):
+    should_proceed_to_pipeline: bool
+    failures: List[PlausibilityFailureOut] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    reasoning_summary: str = ""
+    dose_parse: Optional[ParsedDoseOut] = None
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +656,9 @@ def synthesize_claim(req: SynthesizeRequest):
                 url=p.pubmed_url,
                 population_studied=None,
                 nutritional_components=[],
+                # Feed the full abstract through so the stratifier
+                # extractor has real material to work with.
+                abstract=abstract,
             )
         )
 
@@ -600,7 +668,11 @@ def synthesize_claim(req: SynthesizeRequest):
                 user_claim=locked.raw_claim,
                 user_profile=_locked_to_user_profile(locked, req.age),
                 papers=score_papers_in,
-            )
+            ),
+            # Patch B: pass the LockedPICO so Station 4 runs the
+            # stratification pass (paper-value extraction + stratum
+            # buckets + generalisation warnings).
+            locked_pico=locked,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {e}")
@@ -615,7 +687,90 @@ def synthesize_claim(req: SynthesizeRequest):
             supporting_papers=[_to_cited_paper_out(cp) for cp in v.supporting_papers],
             contradicting_papers=[_to_cited_paper_out(cp) for cp in v.contradicting_papers],
             neutral_papers=[_to_cited_paper_out(cp) for cp in v.neutral_papers],
+            # Patch B — stratified view.
+            paper_stratifications=[
+                PaperStratificationOut(**s.model_dump())
+                for s in v.paper_stratifications
+            ],
+            stratum_buckets=[
+                StratumBucketOut(**b.model_dump())
+                for b in v.stratum_buckets
+            ],
+            generalisation_warnings=list(v.generalisation_warnings),
         )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Station 1.5 — plausibility gate (runs between /api/extract and /api/finalize)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/plausibility", response_model=PlausibilityResponse)
+def check_plausibility(req: PlausibilityRequest):
+    """Gate a claim before elicitation/retrieval.
+
+    Fails open — any unexpected error returns ``should_proceed=True`` with
+    a warning in ``reasoning_summary``. False blocks are worse than false
+    passes here.
+    """
+    flat = dict(req.partial_pico or {})
+    if not flat.get("raw_claim"):
+        raise HTTPException(
+            status_code=422,
+            detail="partial_pico.raw_claim is required for plausibility check.",
+        )
+
+    # Strip any nested SlotExtraction-shaped values ({value, confidence, ...})
+    # that leaked through — the flat PICO should carry primitives only.
+    clean: dict = {}
+    for k, v in flat.items():
+        if isinstance(v, dict) and "value" in v:
+            clean[k] = v.get("value")
+        else:
+            clean[k] = v
+    clean.setdefault("ambiguous_slots", [])
+
+    try:
+        pico = FlatPartialPICO(**clean)
+    except Exception as e:
+        raise HTTPException(
+            status_code=422, detail=f"Malformed partial PICO: {e}"
+        )
+
+    try:
+        agent = PlausibilityAgent()
+        result = agent.evaluate(pico)
+    except Exception as e:
+        # Fail open: surface the error as a soft warning but let the user
+        # keep going.
+        return PlausibilityResponse(
+            should_proceed_to_pipeline=True,
+            failures=[],
+            warnings=[f"Plausibility check skipped: {e}"],
+            reasoning_summary=(
+                "Plausibility check could not run; proceeding without gating."
+            ),
+            dose_parse=None,
+        )
+
+    return PlausibilityResponse(
+        should_proceed_to_pipeline=result.should_proceed_to_pipeline,
+        failures=[
+            PlausibilityFailureOut(
+                failure_type=f.failure_type,
+                severity=f.severity,
+                reasoning=f.reasoning,
+                supporting_data=f.supporting_data or {},
+            )
+            for f in result.failures
+        ],
+        warnings=list(result.warnings or []),
+        reasoning_summary=result.reasoning_summary or "",
+        dose_parse=(
+            ParsedDoseOut(**result.dose_parse.model_dump())
+            if result.dose_parse is not None
+            else None
+        ),
     )
 
 
