@@ -4,7 +4,7 @@ Running record of the Health Myth Debunker build, in the order work happened.
 
 ## Test-suite status
 
-- **711 passed, 2 skipped** (skipped: the two gated live-LLM tests in `tests/test_extraction_integration.py`, `tests/test_retrieval_live.py`, and the live-LLM branch of `tests/test_plausibility_eval.py`).
+- **1008 passed, 2 skipped** (skipped: the two gated live-LLM tests in `tests/test_extraction_integration.py`, `tests/test_retrieval_live.py`, and the live-LLM branch of `tests/test_plausibility_eval.py`).
 - Run: `python3 -m pytest tests/ -q`.
 - TypeScript: `cd frontend && npx tsc --noEmit` clean.
 
@@ -554,6 +554,292 @@ runs at all.
 
 ---
 
+## Stratified synthesis — Elicitation Patch B
+
+**Motivation.** Several elicitation slots (`dose`, `form`,
+`frequency`, `population`) were collected from the user and then
+ignored: extraction parsed them, elicitation asked about them, the
+`LockedPICO` stored them — and retrieval + synthesis never
+conditioned on them. The questions felt like theater because,
+downstream, they were. Built per `docs/elicitation_spec_patchB.md`.
+
+### The fix
+
+Each PICO slot is now assigned a **role** in
+[priority_table.py](../src/elicitation/priority_table.py):
+
+- `pre_retrieval` — value materially narrows the PubMed query.
+  Slots: `food`, `outcome`, `component` (unchanged behaviour).
+- `stratifier` — value is used *post-retrieval* to partition,
+  weight, and annotate papers. Slots: `dose`, `form`, `frequency`,
+  `population`.
+
+Stratifier question templates get a hint suffix appended at render
+time — *"(We'll search broadly and group the results by your
+answer, so answering 'not sure' won't narrow the evidence.)"* — so
+users know the answer shapes the output, not the search.
+
+### Pipeline additions
+
+- [src/synthesis/stratifier.py](../src/synthesis/stratifier.py) —
+  LLM extractor: for each retrieved paper, pull dose / form /
+  frequency / population **as the paper studied them** from the
+  abstract. Structured output, 8 calibrated few-shots including an
+  in-vitro and meta-analysis case. Runs with thinking off on
+  Flash, fanned out in parallel (40 papers in one wave under the
+  current config).
+- [src/synthesis/stratum_assigner.py](../src/synthesis/stratum_assigner.py)
+  — deterministic comparison of user value vs paper value. Dose by
+  ratio thresholds (0.5–2.0× = matches, inclusive); form via a
+  canonical token table (`dietary`, `supplement`, `extract`,
+  `isolated_compound`, `topical`) plus a food-specific fallback
+  for tokens like `processed` / `unprocessed`; population via a
+  two-axis classifier (age bracket × condition flags including
+  pregnancy, disease markers, in-vitro, animal).
+- [src/synthesis/stratification.py](../src/synthesis/stratification.py)
+  — combines the extracted values with the user's `LockedPICO`
+  into `PaperStratification` rows, `StratumBucket`s per user-stated
+  slot, per-stratum mini-verdicts (supported / contradicted /
+  insufficient_evidence / empty), and
+  `detect_generalisation_warnings` — plain-English sentences that
+  fire when ≥50% of retrieved papers land off-stratum for the
+  user's value.
+
+### Verdict synthesis is now stratum-aware
+
+The verdict prompt (`_VERDICT_SYSTEM_PROMPT`) gained a
+**STRATIFIED EVIDENCE** section instructing Gemini to weight
+matching-stratum papers more heavily than off-stratum papers, and
+to weave the worst generalisation warning into the final
+`verdict_reasoning` when it fires. Per-paper stratum labels are
+rendered into the verdict message.
+
+A separate `_VerdictResultLLM` schema is used as Gemini's
+`response_schema` because the full `VerdictResult` contains dict
+fields on `StratumBucket` that generate `additionalProperties` in
+the Pydantic JSON schema — which Gemini refuses. The three Patch
+B fields (`paper_stratifications`, `stratum_buckets`,
+`generalisation_warnings`) are populated deterministically in
+Python *after* the LLM returns and merged onto the final
+`VerdictResult` before it ships to the frontend.
+
+### Frontend
+
+- [frontend/src/components/results/StratifiedEvidence.tsx](../frontend/src/components/results/StratifiedEvidence.tsx)
+  — "Evidence by your specific question" card sitting above the
+  stance tabs. One block per user-stated stratifier slot, strata
+  rendered matches-first with coloured dots, expandable to show
+  per-paper PMIDs + studied values, mini-verdict badges from
+  `stratum_verdicts`.
+- [frontend/src/components/results/GeneralisationWarning.tsx](../frontend/src/components/results/GeneralisationWarning.tsx)
+  — yellow-accent panel listing the deterministic warnings.
+  Renders null when empty, so parents can mount unconditionally.
+
+### Backend integration
+
+`/api/synthesize` now passes the `LockedPICO` into `analyze_claim`
+and threads the full abstract (not just the last two sentences)
+to `ScorePaper` so the stratifier has real material to extract
+from. `VerdictOut` gained `paper_stratifications`,
+`stratum_buckets`, `generalisation_warnings`.
+
+### Tests + eval set
+
+- Schema + helper tests cover `build_paper_stratifications`,
+  `build_stratum_buckets`, `compute_stratum_verdicts`,
+  `compose_stratum_reasoning`, and `detect_generalisation_warnings`
+  — 22 cases.
+- 14 stratifier tests including the three spec examples, null
+  handling, and empirical verification that the thread pool
+  honours `max_workers`.
+- 142 deterministic stratum-assigner tests: 21 dose threshold
+  cases, 40 form canonicalisations, 15 form assignments, 12
+  frequency cases, 17 population cases.
+- [tests/fixtures/stratification_test_cases.yaml](../tests/fixtures/stratification_test_cases.yaml)
+  — 33 hand-labelled end-to-end cases (each case pairs a
+  `LockedPICO` + a list of papers with ground-truth values + a
+  stance). Parametrised runner
+  [tests/test_stratification_eval.py](../tests/test_stratification_eval.py)
+  asserts stratum counts exactly and warnings by substring.
+
+### What is still theater
+
+Stratification is plumbed end-to-end. It only does useful work
+when the user's stratifier answer is **semantic enough** for the
+assigner to parse:
+
+- `form`: works — option_values like `dietary`, `supplement`,
+  `processed` canonicalise cleanly.
+- `population`: works — tokens classify into age bracket +
+  condition flags.
+- `dose`: half-works — tier tokens like `low` / `moderate` /
+  `high` can't be compared numerically, so the assigner silently
+  returns `not_applicable` for coffee / sweetener dose. A real
+  numeric dose input would complete the fix.
+- `frequency`: works for canonical tokens; similar limitation on
+  tier-token food templates.
+
+---
+
+## pretty_UI integration
+
+Sharon's `pretty_UI` branch (a full visual redesign) was merged
+onto the plausibility / Patch B integration branch. 26 files
+changed, +4460 / −878 lines.
+
+**New stack:**
+- Tailwind CSS v4 + `@tailwindcss/vite`
+- `lucide-react` icons, `clsx`, `tailwind-merge`
+- Fraunces serif + Inter body
+- localStorage-backed claim history
+
+**New tree under [frontend/src/components/](../frontend/src/components/):**
+- `layout/` — `Header`, `Footer`, `Tabs` (multi-tab shell),
+  `AnalysisPipeline` (vertical sidebar stepper).
+- `ui/` — `Alert`, `Badge`, `Button`, `Card`, `Spinner` primitives.
+- `results/` — `VerdictCard`, `DemographicCaveat`, `CitedPaperCard`,
+  `RawPaperCard`, plus new `StratifiedEvidence` +
+  `GeneralisationWarning` from Patch B.
+- `tabs/` — `AnalyzeTab`, `QuestionsFlow`, `ResultsTab`,
+  `CommonClaimsTab`, `HistoryTab`, `AboutTab`, plus new
+  `PlausibilityBlocked`.
+
+**App.tsx** goes from a 1000-line inline-styled monolith to a
+thin orchestrator that mounts tabs and routes state between them.
+Stages: `input` | `plausibility_blocked` | `questions` | `results`.
+
+### Bug squashed during integration
+
+`AnalyzeTab` had its own internal `claim` state instead of
+reading an `initialClaim` prop — so when the user clicked a card
+on **Common Claims** or **History**, the App-level claim updated
+but the textarea stayed empty. Fixed by adding an optional
+`initialClaim` prop + `useEffect` sync.
+
+### Plausibility UI
+
+[frontend/src/components/tabs/PlausibilityBlocked.tsx](../frontend/src/components/tabs/PlausibilityBlocked.tsx)
+renders the blocked-claim panel with per-failure cards. F1
+failures render stated/typical/harmful values + source citation.
+Warnings-only outcomes surface above `QuestionsFlow` as a yellow
+alert list; the "Search anyway" override carries through to the
+results page as a red alert at the top.
+
+---
+
+## Model migration: Gemini 2.5 → Gemini 3.x
+
+Swapped the production defaults from the 2.5 family to the
+Gemini 3 preview family. Hit three non-obvious compatibility
+issues along the way; all fixed:
+
+### 1. Gemini refuses `additionalProperties`
+
+Pydantic emits `additionalProperties` for every `dict[K, V]`
+field. The Patch B `StratumBucket` has four such dicts, so
+including `stratum_buckets` on the response schema Gemini sees
+broke with *"additionalProperties is not supported in the Gemini
+API."*
+
+**Fix:** introduce a narrow `_VerdictResultLLM` schema (only the
+fields the LLM produces), use it as `response_schema`, populate
+the Patch B fields in Python *after* parsing.
+[paper_scorer.py](../src/synthesis/paper_scorer.py).
+
+### 2. Gemini 3 function calls need `thought_signature`
+
+`gemini-3.1-pro-preview` with thinking enabled attaches a
+`thought_signature` byte-blob to every `function_call` part. When
+the same call is replayed on the next agent turn (paired with the
+tool result), the signature must be preserved verbatim or the API
+returns 400 INVALID_ARGUMENT.
+
+**Fix:** `ToolCall` gains a `thought_signature` field; the
+retrieval agent propagates it through history and
+`_messages_to_contents` attaches it back onto the replayed part.
+[agent_llm.py](../src/retrieval/agent_llm.py),
+[retrieval_agent.py](../src/retrieval/retrieval_agent.py).
+
+### 3. `gemini-3.1-pro-preview` rejects `thinking_budget=0`
+
+*"Budget 0 is invalid. This model only works in thinking mode."*
+Server-side constraint; not a flag we can turn off. Removed every
+explicit `thinking_budget=0` from the codebase and let the model
+default drive thinking behaviour.
+
+### Final model split
+
+Reasoning-heavy stages stay on Pro; mechanical high-volume stages
+go on Flash. Under ~1 minute end-to-end for a typical claim:
+
+| Stage | Model | Why |
+|---|---|---|
+| Extraction | `gemini-3.1-pro-preview` | One reasoning-heavy call. Component inference benefits from thinking. |
+| Plausibility (dose parse + mechanism) | `gemini-3-flash-preview` | 8 calibrated few-shots; the gate is latency-critical. |
+| Retrieval agent tool loop | `gemini-3-flash-preview` | Tool selection is mechanical. |
+| Paper scoring (`score_papers`) | `gemini-3-flash-preview` | Rubric-driven; 40-paper prompt in one call. |
+| Stratifier per-paper extraction | `gemini-3-flash-preview` | 40 parallel calls, structured output. |
+| Verdict (`generate_verdict`) | `gemini-3.1-pro-preview` | The one synthesis call where depth pays off. |
+
+Constants: `FAST_MODEL` / `VERDICT_MODEL` in
+[paper_scorer.py](../src/synthesis/paper_scorer.py).
+
+### Stratifier parallelism unlocked
+
+The user's environment has no per-minute request cap, so the
+stratifier fan-out (`extract_values_in_parallel`) was bumped
+from `max_workers=4` to `max_workers=50`. For the backend's 40-paper
+batch this means all 40 calls go out in a single wave — ~3–5 s
+total instead of ~60 s at 4-at-a-time.
+
+---
+
+## User-facing token normalisation
+
+The results page renders the locked PICO as chips —
+`food: coffee`, `outcome: type_2_diabetes`, `population: healthy_adults`.
+Underscores were leaking into the UI from
+`option_values` stored in
+[question_templates.py](../src/elicitation/question_templates.py).
+
+Normalised in two sweeps:
+
+- **Population tokens**: `healthy_adults`, `healthy_replete`,
+  `inflammatory_patients`, `cardiovascular_patients`,
+  `liver_patients`, `lactose_intolerant` → space-separated
+  equivalents.
+- **Outcome tokens** (16): `cardiovascular_disease`,
+  `type_2_diabetes`, `colorectal_cancer`, `liver_disease`,
+  `fetal_outcomes`, `glucose_metabolism`, `weight_loss`,
+  `weight_gain`, `bone_health`, `dental_caries`, `fatty_liver`,
+  `liver_health`, `sleep_anxiety`, `pregnancy_outcomes`,
+  `allergy_gi`, `growth_development` → space-separated.
+- **Form / frequency / dose tier tokens** (15): `d3_supplement`,
+  `d2_supplement`, `dietary_concentrated`, `low_fat`,
+  `moderate_high`, `high_dose`, `very_high`, `multi_daily`,
+  `low_daily`, `high_daily`, `time_restricted_16_8`, `five_two`,
+  `alternate_day`, `active_compound`, `whole_food` →
+  space-separated.
+
+**Intentionally left underscored:**
+- `older_adults` — it's a `DemographicGroup` `Literal` type, used
+  as a downstream type tag not a user-picked value.
+- Python identifiers, JSON field names, module names.
+
+The downstream concept resolver takes outcome text as a free
+string and resolves via LLM, so `"type 2 diabetes"` and
+`"type_2_diabetes"` round-trip to the same MeSH concept.
+Stratum-assigner normalisation also maps `_` / `-` / space, so
+population classification is unchanged.
+
+**Leftover cosmetic quirks from the mechanical rename:**
+`d3 supplement` (should be `D3 supplement`),
+`d2 supplement`, `time restricted 16 8` (should be `16:8`),
+`five two` (should be `5:2`). Fixable case-by-case, not
+functional issues.
+
+---
+
 ## File inventory (current)
 
 Source:
@@ -588,15 +874,29 @@ Source:
 - [src/retrieval/schemas.py](../src/retrieval/schemas.py)
 - [src/retrieval/_gemini_retry.py](../src/retrieval/_gemini_retry.py)
 - [src/synthesis/__init__.py](../src/synthesis/__init__.py)
-- [src/synthesis/paper_scorer.py](../src/synthesis/paper_scorer.py)
-- [src/synthesis/schemas.py](../src/synthesis/schemas.py)
-- [backend/main.py](../backend/main.py) (FastAPI: `/api/extract`, `/api/plausibility`, `/api/finalize`, `/api/synthesize`, `/api/health`)
-- [frontend/src/App.tsx](../frontend/src/App.tsx) + [frontend/src/api.ts](../frontend/src/api.ts)
+- [src/synthesis/paper_scorer.py](../src/synthesis/paper_scorer.py) (with `_VerdictResultLLM` narrow schema for Gemini compat)
+- [src/synthesis/schemas.py](../src/synthesis/schemas.py) (extended with `PaperStratification`, `StratumBucket`, `StratumMatch`)
+- [src/synthesis/stratifier.py](../src/synthesis/stratifier.py) (NEW — Patch B paper-value extractor)
+- [src/synthesis/stratum_assigner.py](../src/synthesis/stratum_assigner.py) (NEW — deterministic assigner)
+- [src/synthesis/stratification.py](../src/synthesis/stratification.py) (NEW — bucket builder + warnings)
+- [backend/main.py](../backend/main.py) (FastAPI: `/api/extract`, `/api/plausibility`, `/api/finalize`, `/api/synthesize`, `/api/health`; stratification fields on `VerdictOut`; `LockedPICO` threaded into `analyze_claim`)
 - [demo.py](../demo.py) (CLI driver)
+
+Frontend:
+- [frontend/src/App.tsx](../frontend/src/App.tsx) + [frontend/src/api.ts](../frontend/src/api.ts) — stages, types, checkPlausibility/synthesizeClaim/finalizeClaim clients.
+- [frontend/src/components/layout/](../frontend/src/components/layout/) — `Header`, `Footer`, `Tabs`, `AnalysisPipeline` (pretty_UI).
+- [frontend/src/components/ui/](../frontend/src/components/ui/) — `Alert`, `Badge`, `Button`, `Card`, `Spinner` primitives.
+- [frontend/src/components/results/](../frontend/src/components/results/) — `VerdictCard`, `PaperCard`, plus Patch B's `StratifiedEvidence` and `GeneralisationWarning`.
+- [frontend/src/components/tabs/](../frontend/src/components/tabs/) — `AnalyzeTab`, `QuestionsFlow`, `ResultsTab`, `CommonClaimsTab`, `HistoryTab`, `AboutTab`, plus `PlausibilityBlocked`.
+- [frontend/src/index.css](../frontend/src/index.css) — Tailwind v4 theme tokens (muted evergreen palette).
+
+Specs:
+- [docs/plausibility_spec.md](plausibility_spec.md)
+- [docs/elicitation_spec_patchB.md](elicitation_spec_patchB.md)
 
 Logs (auto-generated, gitignored):
 - `logs/extraction.jsonl`, `logs/extraction_llm.jsonl`
 - `logs/elicitation.jsonl`
 - `logs/plausibility.jsonl`
 - `logs/retrieval.jsonl`
-- `logs/synthesis.jsonl`
+- `logs/synthesis.jsonl` (now carries `stratifications`, `stratum_buckets`, `generalisation_warnings`)

@@ -45,7 +45,7 @@ from src.schemas import PartialPICO
 logger = logging.getLogger(__name__)
 
 DEFAULT_LOG_FILE = "logs/retrieval.jsonl"
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 _SYSTEM_PROMPT = """\
@@ -143,7 +143,12 @@ class RetrievalAgent:
         self.pubmed = pubmed or PubMedClient()
         self.builder = builder or QueryBuilder()
         if resolver is None:
-            resolver = ConceptResolver(LLMClient(model=model), self.pubmed)
+            # Concept resolution is structured output — pick MeSH terms +
+            # synonyms for a given slot. Thinking doesn't help and costs
+            # 10-40s per call on Gemini 3 Flash. Disable explicitly.
+            resolver = ConceptResolver(
+                LLMClient(model=model, thinking_budget=0), self.pubmed
+            )
         self.resolver = resolver
         self.caers = caers
         self.log_file = log_file if log_file is not None else DEFAULT_LOG_FILE

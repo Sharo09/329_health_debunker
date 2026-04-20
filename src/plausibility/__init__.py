@@ -1,6 +1,8 @@
 from src.plausibility.dose_checker import (
     DOSE_PARSE_SYSTEM_PROMPT,
+    GENERIC_DOSE_SYSTEM_PROMPT,
     check_dose_plausibility,
+    check_generic_dose,
     normalize_to_reference_unit,
     parse_dose,
 )
@@ -22,6 +24,7 @@ from src.plausibility.schemas import (
 
 __all__ = [
     "DOSE_PARSE_SYSTEM_PROMPT",
+    "GENERIC_DOSE_SYSTEM_PROMPT",
     "DoseConfidence",
     "FailureType",
     "MECHANISM_SYSTEM_PROMPT",
@@ -34,6 +37,7 @@ __all__ = [
     "ReferenceTable",
     "Severity",
     "check_dose_plausibility",
+    "check_generic_dose",
     "check_mechanism",
     "normalize_to_reference_unit",
     "parse_dose",

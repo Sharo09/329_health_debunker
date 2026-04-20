@@ -32,6 +32,218 @@ apple:
     - unit: gram
       ratio: 0.00556
 
+banana:
+  unit: banana
+  typical_daily_low: 0
+  typical_daily_high: 3
+  implausibly_high: 15
+  harmful_threshold: 25
+  source: USDA Dietary Guidelines; NIH ODS Potassium
+  notes: >
+    Each medium banana has ~420 mg potassium. Healthy adult UL for
+    dietary potassium is ~4,700 mg/day; 25 bananas ≈ 10,500 mg,
+    hyperkalemia risk esp. with renal impairment.
+
+orange:
+  unit: orange
+  typical_daily_low: 0
+  typical_daily_high: 3
+  implausibly_high: 10
+  harmful_threshold: 20
+  source: USDA Dietary Guidelines
+  notes: >
+    ~70 mg vitamin C and ~15 g sugar per medium orange; >10/day is
+    caloric and glycaemic overload.
+
+avocado:
+  unit: avocado
+  typical_daily_low: 0
+  typical_daily_high: 1
+  implausibly_high: 5
+  harmful_threshold: 10
+  source: USDA Dietary Guidelines
+  notes: >
+    Each ~320 kcal; >5/day pushes 1,600+ kcal from avocado alone.
+
+tomato:
+  unit: tomato
+  typical_daily_low: 0
+  typical_daily_high: 3
+  implausibly_high: 15
+  harmful_threshold: 30
+  source: USDA Dietary Guidelines
+  notes: >
+    Very high tomato intake can aggravate acid reflux and (at
+    extremes) lycopenemia, but true toxicity is rare.
+
+grape:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 150
+  implausibly_high: 1000
+  harmful_threshold: 2000
+  source: USDA Dietary Guidelines
+  notes: >
+    Typical serving ~150 g (~1 cup). Large volumes = heavy sugar load.
+
+blueberry:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 150
+  implausibly_high: 1000
+  harmful_threshold: 2000
+  source: USDA Dietary Guidelines
+  notes: >
+    Typical serving ~150 g. Extreme intakes mainly cause GI distress.
+
+strawberry:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 150
+  implausibly_high: 1000
+  harmful_threshold: 2000
+  source: USDA Dietary Guidelines
+  notes: >
+    ~150 g typical. Extreme intakes: allergen risk + GI distress.
+
+broccoli:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 200
+  implausibly_high: 1000
+  harmful_threshold: 2000
+  source: USDA Dietary Guidelines
+  notes: >
+    Goitrogenic at very high sustained raw intakes (>1 kg/day).
+
+spinach:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 100
+  implausibly_high: 500
+  harmful_threshold: 1000
+  source: USDA Dietary Guidelines
+  notes: >
+    Very high oxalate load at >500 g/day; kidney-stone risk.
+
+kale:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 100
+  implausibly_high: 500
+  harmful_threshold: 1000
+  source: USDA Dietary Guidelines
+  notes: >
+    Goitrogens + vitamin K load; relevant for hypothyroid and
+    anticoagulated patients at extreme intakes.
+
+carrot:
+  unit: carrot
+  typical_daily_low: 0
+  typical_daily_high: 2
+  implausibly_high: 10
+  harmful_threshold: 30
+  source: USDA Dietary Guidelines
+  notes: >
+    Beta-carotene load at extremes causes carotenodermia
+    (harmless but visible). True toxicity is rare.
+
+garlic:
+  unit: clove
+  typical_daily_low: 0
+  typical_daily_high: 3
+  implausibly_high: 15
+  harmful_threshold: 30
+  source: NIH ODS Garlic Fact Sheet
+  notes: >
+    Raw high-dose garlic causes GI distress and bleeding-time
+    prolongation with anticoagulants.
+
+ginger:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 4
+  implausibly_high: 30
+  harmful_threshold: 50
+  source: NIH ODS Ginger Fact Sheet
+  notes: >
+    ~4 g/day is the common evidence-reviewed max; GI symptoms
+    and bleeding risk above.
+
+honey:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 30
+  implausibly_high: 200
+  harmful_threshold: 500
+  source: WHO added-sugar guidance
+  notes: >
+    Essentially pure sugar; 500 g/day is severe metabolic load.
+
+dark_chocolate:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 30
+  implausibly_high: 200
+  harmful_threshold: 400
+  source: FDA guidance on caffeine + cadmium monitoring
+  notes: >
+    ~12 mg caffeine per 10 g; large intakes also contribute to
+    cadmium exposure from cocoa.
+
+almond:
+  unit: nut
+  typical_daily_low: 0
+  typical_daily_high: 30
+  implausibly_high: 200
+  harmful_threshold: 500
+  source: USDA Dietary Guidelines; allergy literature
+  notes: >
+    ~7 kcal/nut; 500 nuts ≈ 3,500 kcal. Cyanogenic glycoside
+    considerations apply to raw bitter almonds, not sweet almonds.
+
+walnut:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 30
+  implausibly_high: 200
+  harmful_threshold: 500
+  source: USDA Dietary Guidelines
+  notes: >
+    ~650 kcal per 100 g; extreme intakes are caloric overload.
+
+peanut:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 30
+  implausibly_high: 200
+  harmful_threshold: 500
+  source: USDA Dietary Guidelines
+  notes: >
+    Aflatoxin exposure considerations at poor-storage extremes.
+
+salmon:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 170
+  implausibly_high: 1000
+  harmful_threshold: 2000
+  source: FDA/EPA Advice About Eating Fish 2021
+  notes: >
+    Typical serving ~170 g (6 oz). Mercury is lower than tuna but
+    not zero at extremes.
+
+green_tea:
+  unit: cup
+  typical_daily_low: 0
+  typical_daily_high: 4
+  implausibly_high: 15
+  harmful_threshold: 20
+  source: EFSA 2018 catechin opinion; FDA caffeine guidance
+  notes: >
+    ~30 mg caffeine per cup + EGCG; >800 mg/day EGCG from
+    supplements associated with hepatotoxicity.
+
 coffee:
   unit: cup
   typical_daily_low: 0

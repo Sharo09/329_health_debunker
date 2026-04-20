@@ -36,6 +36,8 @@ class _ScriptedLLM:
 
     - If the system prompt mentions "FEASIBILITY", return a
       ``MechanismJudgment``.
+    - If it mentions "reasonable for a normal adult" (the generic-dose
+      fallback prompt), return whatever ``generic_dose`` is set to.
     - Otherwise, return a ``ParsedDose``.
     """
 
@@ -43,14 +45,16 @@ class _ScriptedLLM:
         self,
         mechanism: MechanismJudgment,
         dose: ParsedDose | None = None,
+        generic_dose=None,
         dose_exception: Exception | None = None,
         mechanism_exception: Exception | None = None,
     ):
         self.mechanism = mechanism
         self.dose = dose
+        self.generic_dose = generic_dose
         self.dose_exception = dose_exception
         self.mechanism_exception = mechanism_exception
-        self.calls: list[str] = []  # "dose" or "mechanism"
+        self.calls: list[str] = []  # "dose" | "mechanism" | "generic_dose"
 
     def extract(self, messages, response_schema):
         sys = next((m["content"] for m in messages if m["role"] == "system"), "")
@@ -59,6 +63,16 @@ class _ScriptedLLM:
             if self.mechanism_exception is not None:
                 raise self.mechanism_exception
             return self.mechanism
+        elif "daily intake of a food" in sys:
+            self.calls.append("generic_dose")
+            # Default to a "fine" judgment so tests that don't care
+            # about the fallback aren't affected by it.
+            from src.plausibility.dose_checker import _GenericDoseJudgment
+            if self.generic_dose is None:
+                return _GenericDoseJudgment(
+                    severity="fine", reasoning="fine by default"
+                )
+            return self.generic_dose
         else:
             self.calls.append("dose")
             if self.dose_exception is not None:

@@ -15,7 +15,9 @@ so the comparison is trivially unit-testable without any LLM.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
+
+from pydantic import BaseModel
 
 from src.plausibility.reference_table import ReferenceEntry, ReferenceTable
 from src.plausibility.schemas import ParsedDose, PlausibilityFailure
@@ -219,3 +221,153 @@ def _fmt(x: float) -> str:
     if float(x).is_integer():
         return str(int(x))
     return f"{x:g}"
+
+
+# ---------------------------------------------------------------------------
+# Generic LLM fallback — used when the reference table has no entry for
+# the food. The deterministic check is authoritative where we've curated
+# thresholds; this covers the long tail.
+# ---------------------------------------------------------------------------
+
+GENERIC_DOSE_SYSTEM_PROMPT = """\
+You judge whether a stated daily intake of a food is reasonable for a
+normal adult. You ONLY assess dose magnitude — ignore mechanism,
+feasibility, or framing (other stages handle those).
+
+Return a JSON object with these fields:
+
+  severity        "fine"       — within reasonable daily range
+                  "implausible" — far above typical intake, no healthy
+                                  adult consumes this much
+                  "harmful"     — documented harm at this intake
+                                  regardless of the food's properties
+                                  (e.g. acute toxicity, caloric/nutrient
+                                  overload causing organ stress)
+  reasoning       1-2 sentence factual explanation. Cite a concrete
+                  reason (e.g. caloric load, potassium load, fibre load,
+                  GI distress threshold). Do not speculate beyond what
+                  is commonly accepted in nutrition science.
+
+Be conservative. If the intake is merely "more than typical" but not
+physiologically extreme, return "fine". Only use "harmful" when the
+intake would cause documented harm in a healthy adult within days
+or weeks.
+
+EXAMPLES
+
+Input:  food="banana", stated_intake="300 per day"
+Output: {
+  "severity": "harmful",
+  "reasoning": "300 bananas/day delivers ~35,000 kcal and ~126 g of potassium, far above the 4,700 mg/day tolerable intake and into hyperkalemia territory."
+}
+
+Input:  food="banana", stated_intake="20 per day"
+Output: {
+  "severity": "implausible",
+  "reasoning": "20 bananas/day is ~2,100 kcal from bananas alone and ~8,400 mg potassium; well above typical intake and approaching the tolerable upper limit."
+}
+
+Input:  food="banana", stated_intake="2 per day"
+Output: {
+  "severity": "fine",
+  "reasoning": "2 bananas/day is within normal fruit intake."
+}
+
+Input:  food="blueberry", stated_intake="2000 g per day"
+Output: {
+  "severity": "harmful",
+  "reasoning": "2 kg/day of blueberries is ~1,150 kcal and ~280 g carbohydrate; severe GI distress and glycaemic overload."
+}
+
+Input:  food="broccoli", stated_intake="100 g per day"
+Output: {
+  "severity": "fine",
+  "reasoning": "100 g/day is a standard serving and within dietary guidelines."
+}
+
+Input:  food="strawberry", stated_intake="5 kg per day"
+Output: {
+  "severity": "harmful",
+  "reasoning": "5 kg/day is far beyond any realistic intake; histamine-release reactions and severe GI distress are documented."
+}
+
+Input:  food="salad", stated_intake="2 bowls per day"
+Output: {
+  "severity": "fine",
+  "reasoning": "2 bowls of salad/day is within healthy eating guidelines."
+}
+"""
+
+
+class _GenericDoseJudgment(BaseModel):
+    severity: Literal["fine", "implausible", "harmful"]
+    reasoning: str
+
+
+def check_generic_dose(
+    food: Optional[str],
+    parsed_dose: Optional[ParsedDose],
+    llm_client,
+) -> Optional[PlausibilityFailure]:
+    """LLM fallback when the reference table has no entry for the food.
+
+    Only called after ``check_dose_plausibility`` returns ``None`` due
+    to missing food / unit mismatch. Returns a warning-severity
+    failure for ``implausible`` and a blocking one for ``harmful``.
+    Fails open on LLM errors.
+    """
+    if not food or parsed_dose is None:
+        return None
+    if parsed_dose.confidence == "not_a_dose":
+        return None
+    if parsed_dose.numeric_value is None:
+        return None
+
+    stated = _format_stated_intake(parsed_dose)
+    messages = [
+        {"role": "system", "content": GENERIC_DOSE_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"food: {food}\n"
+                f"stated_intake: {stated}\n"
+                f"Output:"
+            ),
+        },
+    ]
+    try:
+        judgment = llm_client.extract(messages, _GenericDoseJudgment)
+    except Exception:
+        return None
+
+    if judgment.severity == "fine":
+        return None
+
+    severity: str = "blocking" if judgment.severity == "harmful" else "warning"
+    return PlausibilityFailure(
+        failure_type="F1_dose",
+        severity=severity,  # type: ignore[arg-type]
+        reasoning=judgment.reasoning,
+        supporting_data={
+            "stated_intake": stated,
+            "food": food,
+            "source": "LLM generic-dose fallback (food not in reference table)",
+            "llm_severity": judgment.severity,
+        },
+    )
+
+
+def _format_stated_intake(parsed: ParsedDose) -> str:
+    """Render a ParsedDose as a human-readable intake string."""
+    parts: list[str] = []
+    if parsed.numeric_value is not None:
+        if float(parsed.numeric_value).is_integer():
+            parts.append(str(int(parsed.numeric_value)))
+        else:
+            parts.append(f"{parsed.numeric_value:g}")
+    if parsed.unit:
+        parts.append(parsed.unit)
+    core = " ".join(parts) if parts else (parsed.raw_source or "")
+    if parsed.time_basis and parsed.time_basis != "total":
+        core = f"{core} {parsed.time_basis}"
+    return core.strip() or (parsed.raw_source or "")

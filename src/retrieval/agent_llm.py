@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +127,11 @@ class GeminiAgentLLM(AgentLLM):
                     tools=[tool],
                     system_instruction=system_prompt,
                     temperature=0.0,
+                    # Tool selection is mechanical — pick a function, fill
+                    # args. Thinking doesn't help and costs 3-5s per call
+                    # on Gemini 3 Flash. Disable to cut the agent loop's
+                    # per-iteration latency.
+                    thinking_config=gtypes.ThinkingConfig(thinking_budget=0),
                 ),
             )
         )

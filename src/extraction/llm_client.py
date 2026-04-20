@@ -99,7 +99,7 @@ def _default_gemini_provider(
 class LLMClient:
     def __init__(
         self,
-        model: str = "gemini-3.1-pro-preview",
+        model: str = "gemini-3.1-flash-lite-preview",
         temperature: float = 0.0,
         log_file: Optional[str] = None,
         provider: Optional[ProviderCallable] = None,

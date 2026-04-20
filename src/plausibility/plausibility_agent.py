@@ -19,6 +19,7 @@ from typing import Optional
 from src.extraction.llm_client import LLMClient
 from src.plausibility.dose_checker import (
     check_dose_plausibility,
+    check_generic_dose,
     parse_dose,
 )
 from src.plausibility.mechanism_checker import check_mechanism
@@ -39,7 +40,7 @@ DEFAULT_LOG_FILE = "logs/plausibility.jsonl"
 # mechanism prompt has eight calibrated few-shots and the dose parser
 # is a mechanical JSON extraction, so we run this on Flash rather
 # than Pro. Keeps the gate under ~3 s instead of ~15 s.
-_DEFAULT_MODEL = "gemini-3-flash-preview"
+_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
 _DEFAULT_THINKING_BUDGET: int | None = None
 
 
@@ -76,20 +77,50 @@ class PlausibilityAgent:
         """
         f234: list[PlausibilityFailure] = []
         parsed_dose: Optional[ParsedDose] = None
+        f1: Optional[PlausibilityFailure] = None
+
+        # Decide ahead of time whether to run the generic-dose LLM
+        # fallback. When the food is in the reference table, the
+        # deterministic check is authoritative and we skip the extra
+        # call entirely. When it isn't, we start the fallback in
+        # parallel with mechanism so plausibility latency stays at
+        # ``max(mechanism, parse + generic)`` instead of the full
+        # three-call chain.
+        food_needs_fallback = bool(
+            pico.food and self.reference_table.lookup(pico.food) is None
+        )
 
         if pico.dose and pico.dose.strip():
-            with ThreadPoolExecutor(max_workers=2) as pool:
+            with ThreadPoolExecutor(max_workers=3) as pool:
                 dose_future = pool.submit(self._parse_dose, pico)
                 mech_future = pool.submit(self._run_mechanism, pico.raw_claim)
+
+                if food_needs_fallback:
+                    def _run_generic_dose():
+                        pd = dose_future.result()
+                        if pd is None:
+                            return None
+                        return check_generic_dose(pico.food, pd, self.llm)
+                    generic_future = pool.submit(_run_generic_dose)
+                else:
+                    generic_future = None
+
                 parsed_dose = dose_future.result()
                 f234 = mech_future.result()
+                generic_result = generic_future.result() if generic_future else None
         else:
-            # Empty dose — parse is a no-op, just run mechanism.
+            # Empty dose — parse and generic fallback are no-ops.
             f234 = self._run_mechanism(pico.raw_claim)
+            generic_result = None
 
-        f1 = check_dose_plausibility(
+        # Deterministic arithmetic check runs unconditionally; it's
+        # free once parsed_dose is in hand.
+        deterministic = check_dose_plausibility(
             pico.food, parsed_dose, self.reference_table
         )
+        # Prefer the deterministic result when it fired. Fall back to
+        # the LLM-judged generic result for foods not in the table.
+        f1 = deterministic or generic_result
 
         failures: list[PlausibilityFailure] = []
         if f1 is not None:

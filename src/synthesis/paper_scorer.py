@@ -75,11 +75,12 @@ from src.synthesis.stratifier import extract_values_in_parallel
 # Config
 # ---------------------------------------------------------------------------
 
-# Split between a fast model for high-volume mechanical calls (score
-# papers, stratifier extractor) and a pro model for the one reasoning
-# pass that matters most (final verdict synthesis).
-FAST_MODEL = "gemini-3-flash-preview"
-VERDICT_MODEL = "gemini-3.1-pro-preview"
+# Every stage now uses Flash-Lite. Trade-off: slightly weaker reasoning
+# on the verdict vs Pro, but an order-of-magnitude faster. Override per
+# call via the ``verdict_model`` argument on ``analyze_claim`` if a
+# specific run needs Pro-tier synthesis.
+FAST_MODEL = "gemini-3.1-flash-lite-preview"
+VERDICT_MODEL = "gemini-3.1-flash-lite-preview"
 
 # Back-compat alias — some older call sites still import this.
 DEFAULT_MODEL = FAST_MODEL
