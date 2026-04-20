@@ -1,0 +1,315 @@
+# Plausibility reference table for Station 1.5.
+#
+# Each entry gives, for one food or nutrient, thresholds used by the F1
+# dose checker. Values are adults-18+ unless noted. Sources are cited;
+# notes explain edge cases.
+#
+# Threshold semantics:
+#   typical_daily_low   / typical_daily_high  — realistic intake range
+#   implausibly_high    — no realistic population consumes this (→ F1 warning)
+#   harmful_threshold   — documented toxicity at or above this (→ F1 blocking)
+#
+# ``alternate_units`` lets the dose parser convert user-facing units
+# (e.g. "grams of apple") into the reference entry's unit.
+
+# ---------------------------------------------------------------------------
+# Foods (demo set)
+# ---------------------------------------------------------------------------
+
+apple:
+  unit: apple
+  typical_daily_low: 0
+  typical_daily_high: 3
+  implausibly_high: 10
+  harmful_threshold: 20
+  source: USDA Dietary Guidelines 2020-2025
+  notes: >
+    "An apple a day" is the folkloric norm. Above ~10/day, caloric and
+    fibre load becomes problematic (>2,500 kcal, >150g fibre).
+  alternate_units:
+    - unit: g
+      ratio: 0.00556      # 1g = 1/180 apple
+    - unit: gram
+      ratio: 0.00556
+
+coffee:
+  unit: cup
+  typical_daily_low: 0
+  typical_daily_high: 4
+  implausibly_high: 10
+  harmful_threshold: 15
+  source: FDA guidance on caffeine + EFSA 2015
+  notes: >
+    ~95 mg caffeine per 8-oz cup. 4 cups ≈ 400 mg = FDA safe threshold
+    for healthy adults; caffeine toxicity documented above 1000 mg
+    acute (~10 cups over a short window).
+
+turmeric:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 5
+  implausibly_high: 30
+  harmful_threshold: 50
+  source: EFSA 2018 (curcumin ADI); generally recognised culinary norms
+  notes: >
+    Dietary turmeric is benign at culinary doses (1-5g). 500-2000 mg/day
+    curcumin supplement doses exist; hepatotoxicity case reports at high
+    extract doses.
+
+red_meat:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 100
+  implausibly_high: 500
+  harmful_threshold: 1000
+  source: WHO IARC monograph 114; Harvard SPH dietary guidelines
+  notes: >
+    Associations with colorectal cancer emerge around 100 g/day processed
+    or unprocessed red meat. Absolute upper limits are less about acute
+    harm and more about sustained chronic risk.
+
+eggs:
+  unit: egg
+  typical_daily_low: 0
+  typical_daily_high: 3
+  implausibly_high: 10
+  harmful_threshold: 20
+  source: Dietary Guidelines for Americans; Harvard egg-and-CVD analyses
+  notes: >
+    One egg has ~200 mg cholesterol. Even 20/day unlikely acutely toxic
+    but calorically dominant and rarely sustained.
+
+alcohol:
+  unit: drink
+  typical_daily_low: 0
+  typical_daily_high: 2
+  implausibly_high: 6
+  harmful_threshold: 8
+  source: Dietary Guidelines for Americans 2020; WHO 2023
+  notes: >
+    A "standard drink" = 14g ethanol. >2/day for women or >3/day for men
+    is defined as heavy drinking; >8/day approaches acute toxicity in a
+    single session.
+
+dairy_milk:
+  unit: cup
+  typical_daily_low: 0
+  typical_daily_high: 3
+  implausibly_high: 8
+  harmful_threshold: 15
+  source: Dietary Guidelines for Americans 2020-2025
+  notes: >
+    1 cup ≈ 240 mL. Extreme intake risks calcium overload, saturated-fat
+    load, and GI distress but rarely acutely toxic.
+
+added_sugar:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 50
+  implausibly_high: 200
+  harmful_threshold: 400
+  source: WHO 2015; AHA 2016 added-sugar guidance
+  notes: >
+    WHO recommends <25g/day (<5% of energy). 200g+ is clearly excessive;
+    400g approaches metabolic derangement and severe GI consequences.
+
+artificial_sweetener:
+  unit: mg
+  typical_daily_low: 0
+  typical_daily_high: 200
+  implausibly_high: 4000
+  harmful_threshold: 6000
+  source: FDA/EFSA aspartame ADI (40 mg/kg body weight)
+  notes: >
+    For a 75 kg adult, aspartame ADI ≈ 3000 mg/day. Sucralose ADI similar.
+    Implausible intake thresholds reflect how many diet sodas that equates
+    to (>20/day).
+
+# ---------------------------------------------------------------------------
+# Vitamins (most common supplement claims)
+# ---------------------------------------------------------------------------
+
+vitamin_d:
+  unit: IU
+  typical_daily_low: 400
+  typical_daily_high: 2000
+  implausibly_high: 10000
+  harmful_threshold: 4000
+  source: NIH ODS Vitamin D Fact Sheet; IOM DRIs 2011
+  notes: >
+    UL is 4000 IU/day for adults 19+, 1000 IU/day for infants.
+    Hypercalcemia documented at sustained intakes above ~10,000 IU/day.
+  alternate_units:
+    - unit: mcg
+      ratio: 40           # 1 mcg vit D = 40 IU
+    - unit: µg
+      ratio: 40
+
+vitamin_c:
+  unit: mg
+  typical_daily_low: 75
+  typical_daily_high: 500
+  implausibly_high: 5000
+  harmful_threshold: 2000
+  source: NIH ODS Vitamin C Fact Sheet; IOM DRIs
+  notes: >
+    UL for adults is 2000 mg/day. Excess is generally excreted but GI
+    distress, osmotic diarrhoea, and oxalate kidney stones documented
+    above UL.
+  alternate_units:
+    - unit: g
+      ratio: 1000
+
+vitamin_a:
+  unit: IU
+  typical_daily_low: 2000
+  typical_daily_high: 10000
+  implausibly_high: 25000
+  harmful_threshold: 10000
+  source: NIH ODS Vitamin A Fact Sheet; IOM DRIs 2001
+  notes: >
+    UL is 10,000 IU (3000 mcg RAE)/day for adults. Hepatotoxicity and
+    teratogenicity at higher sustained intakes.
+  alternate_units:
+    - unit: mcg
+      ratio: 3.33         # 1 mcg RAE ≈ 3.33 IU (retinol)
+
+vitamin_e:
+  unit: mg
+  typical_daily_low: 15
+  typical_daily_high: 100
+  implausibly_high: 2000
+  harmful_threshold: 1000
+  source: NIH ODS Vitamin E Fact Sheet
+  notes: >
+    UL 1000 mg/day (alpha-tocopherol). Haemorrhage risk at very high
+    intakes, especially with anticoagulants.
+  alternate_units:
+    - unit: IU
+      ratio: 0.67         # 1 IU ≈ 0.67 mg alpha-tocopherol
+
+# ---------------------------------------------------------------------------
+# Minerals
+# ---------------------------------------------------------------------------
+
+iron:
+  unit: mg
+  typical_daily_low: 8
+  typical_daily_high: 18
+  implausibly_high: 200
+  harmful_threshold: 45
+  source: NIH ODS Iron Fact Sheet; IOM DRIs
+  notes: >
+    UL 45 mg/day for adults. Acute toxicity at ~20 mg/kg. Pediatric
+    poisoning is a leading cause of supplement toxicity ER visits.
+
+calcium:
+  unit: mg
+  typical_daily_low: 1000
+  typical_daily_high: 1200
+  implausibly_high: 3000
+  harmful_threshold: 2500
+  source: NIH ODS Calcium Fact Sheet; IOM DRIs 2011
+  notes: >
+    UL 2500 mg/day adults 19-50, 2000 mg/day 51+. Excess causes
+    hypercalcemia, kidney stones, and milk-alkali syndrome.
+
+selenium:
+  unit: mcg
+  typical_daily_low: 55
+  typical_daily_high: 200
+  implausibly_high: 1000
+  harmful_threshold: 400
+  source: NIH ODS Selenium Fact Sheet
+  notes: >
+    UL 400 mcg/day. Brazil nuts are extraordinarily selenium-dense
+    (~70-90 mcg per nut); >5/day approaches UL.
+
+# ---------------------------------------------------------------------------
+# Other compounds
+# ---------------------------------------------------------------------------
+
+omega_3:
+  unit: g
+  typical_daily_low: 0.25
+  typical_daily_high: 3
+  implausibly_high: 10
+  harmful_threshold: 15
+  source: FDA GRAS 3g/day (EPA+DHA); EFSA 5g/day
+  notes: >
+    Immunosuppression, bleeding risk at very high intakes. Most
+    studies use 1-4g/day EPA+DHA.
+
+caffeine:
+  unit: mg
+  typical_daily_low: 100
+  typical_daily_high: 400
+  implausibly_high: 800
+  harmful_threshold: 1000
+  source: FDA guidance + EFSA scientific opinion 2015
+  notes: >
+    FDA notes 400 mg/day generally safe for healthy adults. Toxicity
+    (arrhythmias, seizures) documented above ~1000 mg acute.
+
+# ---------------------------------------------------------------------------
+# Edge cases — known toxicity at extreme intakes
+# ---------------------------------------------------------------------------
+
+water:
+  unit: L
+  typical_daily_low: 1.5
+  typical_daily_high: 3.5
+  implausibly_high: 6
+  harmful_threshold: 5
+  source: IOM DRIs for Water 2004
+  notes: >
+    Harmful threshold depends on intake rate, sodium status, kidney
+    function. Rule of thumb: >4L over a few hours risks hyponatremia
+    regardless of daily volume.
+  alternate_units:
+    - unit: liter
+      ratio: 1
+    - unit: litre
+      ratio: 1
+    - unit: ml
+      ratio: 0.001
+    - unit: mL
+      ratio: 0.001
+    - unit: gallon
+      ratio: 3.785
+    - unit: cup
+      ratio: 0.24
+
+brazil_nut:
+  unit: nut
+  typical_daily_low: 0
+  typical_daily_high: 2
+  implausibly_high: 10
+  harmful_threshold: 6
+  source: NIH ODS Selenium; multiple case reports
+  notes: >
+    Each nut contains ~70-90 mcg selenium. 6 nuts ≈ selenium UL;
+    selenosis documented with sustained consumption.
+
+licorice:
+  unit: g
+  typical_daily_low: 0
+  typical_daily_high: 10
+  implausibly_high: 100
+  harmful_threshold: 100
+  source: EFSA 2012 glycyrrhizin opinion; FDA 2017 Halloween advisory
+  notes: >
+    Glycyrrhizin causes hypokalemia and hypertension. 2 oz/day (~57g)
+    for 2 weeks has triggered arrhythmia in case reports.
+
+tuna:
+  unit: can
+  typical_daily_low: 0
+  typical_daily_high: 1
+  implausibly_high: 7
+  harmful_threshold: 14
+  source: FDA/EPA Advice About Eating Fish 2021
+  notes: >
+    Basis is weekly, not daily. Methylmercury accumulates; pregnant
+    women are advised <=1 can albacore/week. Daily tuna-can levels
+    approach weekly mercury limits within days.

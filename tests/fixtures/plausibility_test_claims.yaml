@@ -1,0 +1,588 @@
+# Plausibility eval set for Station 1.5.
+#
+# Hand-labelled claims. Each row pairs a claim text with the expected
+# PlausibilityAgent output: the set of failures that should fire, their
+# severities, and whether the pipeline should proceed.
+#
+# Distribution per docs/plausibility_spec.md Task 8:
+#   F1 (dose):         ~15 claims
+#   F2 (feasibility):  ~10 claims
+#   F3 (mechanism):    ~10 claims
+#   F4 (frame):         ~5 claims
+#   F5 (clean):        ~20 claims
+#   Edge cases:        ~10 claims (multi-failure, ambiguous, borderline)
+#
+# Fields:
+#   claim: raw user-facing claim text
+#   food, dose, component, outcome: optional flat-PICO overrides. When
+#       omitted, the runner leaves them None and the F1 checker skips.
+#       Provide them only for F1 rows where we want to exercise the
+#       deterministic check without depending on Station 1 extraction.
+#   expected_failures: list of failure_type strings in any order
+#   expected_severities: list paired with expected_failures, same order
+#   expected_should_proceed: derived (false iff any blocking failure)
+#   reasoning_keywords: substrings we expect in the combined reasoning
+#       text; case-insensitive. Empty list means "don't check text."
+#   notes: short rationale for why this row is in the set
+
+# ---------------------------------------------------------------------------
+# F1 — dose implausibility (warning) and dose harm (blocking)
+# ---------------------------------------------------------------------------
+
+- claim: "Does eating 100 apples per day prevent heart disease?"
+  food: apple
+  dose: "100 per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, apple]
+  notes: Canonical F1 blocker — motivating example from the spec.
+
+- claim: "Does eating 10 apples per day prevent heart disease?"
+  food: apple
+  dose: "10 per day"
+  expected_failures: [F1_dose]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [typical, realistic]
+  notes: F1 warning — above typical but below harmful.
+
+- claim: "Does eating 1 apple a day reduce heart disease risk?"
+  food: apple
+  dose: "1 per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — proverbial intake, should pass cleanly.
+
+- claim: "Is 50000 IU of vitamin D per day good for bones?"
+  food: vitamin_d
+  dose: "50000 IU per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, IU]
+  notes: F1 blocker on supplement UL (4000 IU).
+
+- claim: "Does 1000 IU vitamin D daily improve bone health?"
+  food: vitamin_d
+  dose: "1000 IU per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — within typical range.
+
+- claim: "Does drinking 10 liters of water per day boost metabolism?"
+  food: water
+  dose: "10 liters per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, water]
+  notes: F1 blocker — hyponatremia risk at 10L/day.
+
+- claim: "Does drinking 2 liters of water per day help hydration?"
+  food: water
+  dose: "2 liters per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — squarely in the typical range.
+
+- claim: "Does 15 cups of coffee a day improve focus?"
+  food: coffee
+  dose: "15 cups per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, coffee]
+  notes: F1 blocker on caffeine toxicity proxy.
+
+- claim: "Do 8 brazil nuts a day boost thyroid health?"
+  food: brazil_nut
+  dose: "8 nuts per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, nut]
+  notes: F1 blocker — selenium UL.
+
+- claim: "Does 1 brazil nut a day provide enough selenium?"
+  food: brazil_nut
+  dose: "1 nut per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — within typical range.
+
+- claim: "Is 200g of turmeric a day a good anti-inflammatory?"
+  food: turmeric
+  dose: "200 g per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, turmeric]
+  notes: F1 blocker on turmeric dose.
+
+- claim: "Does 2g turmeric a day reduce inflammation?"
+  food: turmeric
+  dose: "2 g per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — culinary range.
+
+- claim: "Does 5000 mg of vitamin C per day cure colds?"
+  food: vitamin_c
+  dose: "5000 mg per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, mg]
+  notes: F1 blocker on vitamin C UL (2000 mg).
+
+- claim: "Is 10 drinks of alcohol a day fine if you exercise?"
+  food: alcohol
+  dose: "10 drinks per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful, drink]
+  notes: F1 blocker — heavy drinking toxicity threshold.
+
+- claim: "Does 500g of added sugar per day cause diabetes?"
+  food: added_sugar
+  dose: "500 g per day"
+  expected_failures: [F1_dose]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [harmful]
+  notes: F1 blocker on sugar.
+
+# ---------------------------------------------------------------------------
+# F2 — feasibility (warning only)
+# ---------------------------------------------------------------------------
+
+- claim: "Does fasting for 40 days cure diabetes?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [sustain, safe, few]
+  notes: F2 warning — long fast rarely sustained safely.
+
+- claim: "Can never drinking water for a week cure anything?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [death, water, day]
+  notes: F2 warning — infeasible premise, not a mechanism claim.
+
+- claim: "Does eating only raw meat for a year reverse autoimmune disease?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [sustain, raw, nutrient]
+  notes: F2 warning — extreme elimination diet.
+
+- claim: "Does eating only broccoli for six months cure cancer?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [nutrient, sustain]
+  notes: F2 warning — monofood diet infeasible.
+
+- claim: "Can holding your breath for an hour a day improve lung capacity?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [sustain, hour]
+  notes: F2 warning — not physically sustainable.
+
+- claim: "Does surviving solely on sunlight for a month cure diabetes?"
+  expected_failures: [F2_feasibility, F3_mechanism]
+  expected_severities: [warning, blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [photosynth, feeding]
+  notes: F2 + F3 — breatharianism. Infeasible premise and incoherent mechanism.
+
+- claim: "Can eating nothing but carrots for a year cure any disease?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [nutrient, sustain]
+  notes: F2 warning — nutrient deficiencies.
+
+- claim: "Can sleeping only 1 hour a night for years improve longevity?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [sustain, sleep]
+  notes: F2 warning — sustained severe sleep deprivation infeasible.
+
+- claim: "Does eating only meat (zero plants) for life prevent obesity?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [sustain, nutrient, vitamin]
+  notes: F2 warning — carnivore diet long-term.
+
+- claim: "Does chewing each bite 300 times for every meal improve digestion?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [sustain, behavior]
+  notes: F2 warning — behaviorally infeasible in practice.
+
+# ---------------------------------------------------------------------------
+# F3 — mechanism incoherence (blocking)
+# ---------------------------------------------------------------------------
+
+- claim: "Can drinking alkaline water cure cancer?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [homeostatic, acid, pH]
+  notes: Canonical F3 — stomach acid + blood pH homeostasis.
+
+- claim: "Does eating raw onions pull toxins out through your feet?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [foot, sole, toxin]
+  notes: Canonical F3 — no transdermal toxin pathway.
+
+- claim: "Does drinking your own urine cure any disease via 'reabsorbed nutrients'?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [waste, nutrient]
+  notes: F3 — urine is a waste product, not a nutrient source.
+
+- claim: "Does breathing only through one nostril rebalance your body's hemispheres?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [hemisphere, breath]
+  notes: F3 — no coupling between nostril and cerebral hemisphere.
+
+- claim: "Does eating only grapefruit flush fat out of your cells?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [fat, flush, cell]
+  notes: F3 — no 'fat flushing' mechanism at the cellular level.
+
+- claim: "Does celery juice detoxify your liver?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [detoxif, liver]
+  notes: F3 — colloquial 'detox' contradicts hepatic physiology.
+
+- claim: "Do hot peppers burn cancer cells by raising body temperature?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [temperature, cancer]
+  notes: F3 — capsaicin does not systemically raise body temperature enough to harm cancer cells.
+
+- claim: "Does eating pineapple dissolve kidney stones on contact?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [enzyme, stone, digest]
+  notes: F3 — bromelain does not survive digestion nor reach kidneys intact.
+
+- claim: "Does magnetized water improve blood flow via iron in red cells?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [magnet, iron, hemoglobin]
+  notes: F3 — hemoglobin iron is not ferromagnetic.
+
+- claim: "Does cold food cool inflammation by physically chilling the gut?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [temperature, inflammation]
+  notes: F3 — ingested food thermally equilibrates within minutes; inflammation is biochemical.
+
+# ---------------------------------------------------------------------------
+# F4 — scientific frame violations (blocking)
+# ---------------------------------------------------------------------------
+
+- claim: "Do vibrations from crystals in your food enhance immunity?"
+  expected_failures: [F3_mechanism, F4_frame]
+  expected_severities: [blocking, blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [undefined, non-empirical]
+  notes: F3 + F4 — undefined 'crystal vibrations' and pseudoscience frame.
+
+- claim: "Does negative energy in processed food cause disease?"
+  expected_failures: [F4_frame]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [undefined, energy]
+  notes: F4 — 'negative energy' is not a defined biological concept.
+
+- claim: "Does the astrological sign of a chef affect the nutritional value of their cooking?"
+  expected_failures: [F4_frame]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [astrolog, nutrition]
+  notes: F4 — non-empirical framing.
+
+- claim: "Does eating chakra-aligned food strengthen your aura?"
+  expected_failures: [F4_frame]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [aura, chakra, undefined]
+  notes: F4 — undefined terms, no testable prediction.
+
+- claim: "Do positive affirmations over your water molecules improve its nutrition?"
+  expected_failures: [F3_mechanism, F4_frame]
+  expected_severities: [blocking, blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [molecule, affirmation]
+  notes: F3 + F4 — Emoto-style, pseudoscientific.
+
+# ---------------------------------------------------------------------------
+# F5 — clean-pass claims (should proceed with no failures)
+# ---------------------------------------------------------------------------
+
+- claim: "Does 2 cups of coffee a day reduce Parkinson's risk?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 canonical — in frame, coherent, within dose.
+
+- claim: "Does eating blueberries reduce oxidative stress?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — standard nutritional biochem.
+
+- claim: "Does the Mediterranean diet reduce cardiovascular disease risk?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — well-studied dietary pattern.
+
+- claim: "Does eating fatty fish improve heart health?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — omega-3 / CVD claim.
+
+- claim: "Does 1000mg of vitamin C per day reduce cold duration?"
+  food: vitamin_c
+  dose: "1000 mg per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — below vitamin C UL.
+
+- claim: "Does green tea lower the risk of stroke?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — plausible catechin / vascular claim.
+
+- claim: "Does whole grain consumption lower LDL cholesterol?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — fibre / lipid claim.
+
+- claim: "Does dietary fibre improve gut microbiota diversity?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — established research direction.
+
+- claim: "Does moderate red wine consumption improve HDL levels?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — classic nutritional epidemiology question.
+
+- claim: "Does reducing sodium intake lower blood pressure?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — very well established.
+
+- claim: "Does dark chocolate improve endothelial function?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — flavanol research.
+
+- claim: "Does soy protein lower LDL cholesterol in adults?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — standard lipid claim.
+
+- claim: "Does daily exercise combined with a low-fat diet reduce type 2 diabetes risk?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — compound lifestyle claim, clearly in frame.
+
+- claim: "Does eating eggs raise blood cholesterol in healthy adults?"
+  food: eggs
+  dose: "1 per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — contested but in-frame claim.
+
+- claim: "Does probiotic yogurt help with antibiotic-associated diarrhea?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — probiotic / GI claim.
+
+- claim: "Does calcium supplementation reduce osteoporotic fractures in older adults?"
+  food: calcium
+  dose: "1200 mg per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — within UL.
+
+- claim: "Does a ketogenic diet reduce seizure frequency in epileptic children?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — known pediatric indication.
+
+- claim: "Does consuming 25g of fibre per day reduce colorectal cancer risk?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — fibre / CRC literature.
+
+- claim: "Does intermittent fasting improve insulin sensitivity?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — mainstream research direction.
+
+- claim: "Does reducing saturated fat intake lower cardiovascular risk?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — core dietary-guidelines claim.
+
+# ---------------------------------------------------------------------------
+# Edge cases — borderline, multi-failure, ambiguous
+# ---------------------------------------------------------------------------
+
+- claim: "Eat 100 apples a day to cure cancer by balancing your chakras"
+  food: apple
+  dose: "100 per day"
+  expected_failures: [F1_dose, F4_frame]
+  expected_severities: [blocking, blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [chakra, harmful]
+  notes: F1 + F4 combined.
+
+- claim: "Drink 15 liters of alkaline water a day to cure cancer"
+  food: water
+  dose: "15 liters per day"
+  expected_failures: [F1_dose, F3_mechanism]
+  expected_severities: [blocking, blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [water, homeostatic]
+  notes: F1 + F3 combined.
+
+- claim: "Take 30000 IU of vitamin D per day to balance your aura"
+  food: vitamin_d
+  dose: "30000 IU per day"
+  expected_failures: [F1_dose, F4_frame]
+  expected_severities: [blocking, blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [aura, harmful]
+  notes: F1 + F4 combined.
+
+- claim: "Is drinking a gallon of water a day too much?"
+  food: water
+  dose: "1 gallon per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — 1 gallon ≈ 3.785 L, within typical range.
+
+- claim: "Is eating 5 apples per day bad for you?"
+  food: apple
+  dose: "5 per day"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — above typical_high=3 but below implausible=10.
+
+- claim: "Is drinking a lot of coffee bad?"
+  food: coffee
+  dose: "a lot"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: Edge — dose is vague, parser returns not_a_dose, F1 skipped; mechanism passes.
+
+- claim: "Does eating carrots improve eyesight?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — folk claim, but in-frame and coherent; left to synthesis to adjudicate.
+
+- claim: "Does a diet of only cotton balls help with weight loss?"
+  expected_failures: [F2_feasibility]
+  expected_severities: [warning]
+  expected_should_proceed: true
+  reasoning_keywords: [nutrient, food]
+  notes: F2 warning — cotton is not food; rarely sustained safely. Mechanism judgment may also fire.
+
+- claim: "Does drinking bleach cure COVID-19?"
+  expected_failures: [F3_mechanism]
+  expected_severities: [blocking]
+  expected_should_proceed: false
+  reasoning_keywords: [toxic, bleach]
+  notes: F3 — blocks on mechanism before retrieval ever runs.
+
+- claim: "Does fasting for 3 days reset your immune system?"
+  expected_failures: []
+  expected_severities: []
+  expected_should_proceed: true
+  reasoning_keywords: []
+  notes: F5 — feasible fast, coherent mechanism (autophagy), in frame.

@@ -4,7 +4,7 @@ Running record of the Health Myth Debunker build, in the order work happened.
 
 ## Test-suite status
 
-- **631 passed, 2 skipped** (skipped: the two gated live-LLM tests in `tests/test_extraction_integration.py` and `tests/test_retrieval_live.py`).
+- **711 passed, 2 skipped** (skipped: the two gated live-LLM tests in `tests/test_extraction_integration.py`, `tests/test_retrieval_live.py`, and the live-LLM branch of `tests/test_plausibility_eval.py`).
 - Run: `python3 -m pytest tests/ -q`.
 - TypeScript: `cd frontend && npx tsc --noEmit` clean.
 
@@ -413,6 +413,147 @@ rather than asking abstract questions about per-food priority slots.**
 
 ---
 
+## Station 1.5 — Plausibility classifier (new stage between Extraction and Elicitation)
+
+**Motivation.** "100 apples a day is good for your health" returned
+**SUPPORTED / high confidence** because the pipeline searched "apples
+AND health," found voluminous positive literature on apples, and
+concluded in favor of the claim. The stated dose (100/day) was
+extracted into the PICO and then ignored by every downstream stage.
+Generalises to *10 L water/day*, *50,000 IU vitamin D*, *alkaline
+water cures cancer*, *chakra crystals enhance immunity* — different
+shapes of the same hole.
+
+**Decision.** Add a new station between Extraction (Station 1) and
+Elicitation (Station 2) whose job is **not** to verdict the claim,
+but to **gate** whether the claim is worth investigating empirically
+at all. Built per `docs/plausibility_spec.md`.
+
+### Five failure modes
+
+- **F1 — Implausible/harmful dose.** Deterministic arithmetic against
+  a curated reference table. Warning at `implausibly_high`, blocking
+  at `harmful_threshold`.
+- **F2 — Infeasible premise.** LLM judgment (warning only — thin
+  evidence is still evidence).
+- **F3 — Incoherent mechanism.** LLM judgment (blocking).
+- **F4 — Category error / non-scientific frame.** LLM judgment
+  (blocking).
+- **F5 — Plausible, proceed.** Majority case.
+
+A claim can trigger multiple simultaneously (e.g. *"eat 100 apples a
+day to cure cancer by balancing your chakras"* → F1 + F4).
+
+### Design principles held
+
+- **Fail open, not closed.** Every skip condition (missing food,
+  unparseable dose, unknown unit, food not in table, LLM call fails)
+  returns cleanly with **no failure** rather than blocking.
+- **Determinism vs. judgment separated.** F1 is pure arithmetic; F2/F3/F4
+  are one structured LLM call. The mechanism prompt is explicitly told
+  to **ignore dose** — F1 remains the single source of truth for
+  dose plausibility. This prevents double-counting and keeps the F1
+  finding auditable.
+- **Respect user agency.** The UI offers a *"Search anyway"* path on
+  every block; it doesn't hard-refuse.
+- **Transparent failures.** Each `PlausibilityFailure` carries
+  `supporting_data` (stated value, thresholds, source citation) so
+  the user can contest the block.
+
+### Implementation
+
+- [src/plausibility/schemas.py](../src/plausibility/schemas.py) —
+  `ParsedDose`, `PlausibilityFailure`, `PlausibilityResult`. The
+  model validator on `PlausibilityResult` **auto-derives**
+  `should_proceed_to_pipeline = not any(f.severity == "blocking")`, so
+  callers can't construct inconsistent states.
+- [data/plausibility_reference.yaml](../data/plausibility_reference.yaml)
+  — 22 hand-curated entries (10 demo foods + vitamins/minerals +
+  edge cases: water, Brazil nut, licorice, tuna). Each row:
+  `typical_daily_low/high`, `implausibly_high`, `harmful_threshold`,
+  `source`, `notes`, optional `alternate_units` for normalisation.
+- [src/plausibility/reference_table.py](../src/plausibility/reference_table.py)
+  — loader. Case-insensitive, whitespace- and underscore-tolerant
+  (`"red meat"` → `"red_meat"`). Missing food returns `None`.
+- [src/plausibility/dose_checker.py](../src/plausibility/dose_checker.py)
+  — two halves: `parse_dose()` (LLM, structured output to
+  `ParsedDose`) and `check_dose_plausibility()` (pure arithmetic).
+  `normalize_to_reference_unit()` handles alternate units (e.g.
+  mcg→IU for vitamin D, g→apple by weight). Bare numbers with no
+  unit are interpreted as the reference unit so *"100/day"* for
+  apples still gates.
+- [src/plausibility/mechanism_checker.py](../src/plausibility/mechanism_checker.py)
+  — one LLM call returning a `MechanismJudgment` (three booleans +
+  three reasons). Translates the judgment into zero-to-three
+  `PlausibilityFailure` entries. Prompt includes eight calibrated
+  few-shots — crucially, one shows the model ignoring an extreme
+  dose so it leaves F1 to the deterministic checker.
+- [src/plausibility/plausibility_agent.py](../src/plausibility/plausibility_agent.py)
+  — orchestrator. Runs F1 and F2/F3/F4 independently, collects
+  failures, derives a user-facing summary, logs every evaluation to
+  `logs/plausibility.jsonl`.
+
+### Integration with the pipeline
+
+- Backend: new `POST /api/plausibility` endpoint in
+  [backend/main.py](../backend/main.py), called between `/api/extract`
+  and `/api/finalize`. Fails open — any endpoint error returns
+  `should_proceed=true` with a warning, so a backend outage can never
+  block a user.
+- Frontend: [frontend/src/api.ts](../frontend/src/api.ts) gains
+  `checkPlausibility()` and the `PlausibilityResponse` type.
+  [frontend/src/App.tsx](../frontend/src/App.tsx) adds a new
+  `plausibility_blocked` stage with a dedicated panel: red banner
+  per failure, F1 failures render stated/typical/harmful values and
+  the source citation, and the footer offers *"Modify my claim"* /
+  *"Search anyway →"*. Warnings-only outcomes show a non-blocking
+  yellow banner alongside the Station 2 questions. An override flag
+  carries through to the results page so post-gate papers are
+  labelled with the plausibility warning that led there.
+
+### Tests
+
+- `test_plausibility_schemas.py` — model validator + default
+  derivation (7 tests).
+- `test_plausibility_reference_table.py` — YAML load + lookup
+  tolerance + ordering invariants (7 tests).
+- `test_plausibility_dose_checker.py` — 21 tests covering
+  parse-dose fail-open behaviour, unit normalisation (including
+  mcg↔IU vitamin D), and every F1 threshold boundary.
+- `test_plausibility_mechanism_checker.py` — scripted-LLM tests
+  for each single-failure case, two-at-once, all-three-at-once
+  (7 tests).
+- `test_plausibility_agent.py` — 13 end-to-end tests: F5 clean
+  pass, F1 blocking/warning alone, F3-only, F1+F3, missing dose,
+  food-not-in-table, LLM failure (dose parse *and* mechanism) —
+  both skip cleanly — plus summary-text and log-file assertions.
+- `test_plausibility_eval.py` — hand-labelled evaluation set
+  (Task 8, 60 claims) at
+  [tests/fixtures/plausibility_test_claims.yaml](../tests/fixtures/plausibility_test_claims.yaml).
+  Runs F1 deterministically against every row that supplies
+  `food` + `dose` (25 cases, always on). A second live-LLM
+  branch is gated on `RUN_LIVE_PLAUSIBILITY_EVAL=1`; spec
+  target is ≥85% agreement overall.
+
+### What this buys
+
+- *"100 apples a day is good for your health"* — F1 blocks with
+  `stated=100 apple, harmful_threshold=20`. Pipeline halts before
+  retrieval ever runs.
+- *"Does 1 apple a day reduce heart disease?"* — passes cleanly
+  through F1-F4 and continues to elicitation.
+- *"Can drinking alkaline water cure cancer?"* — F3 blocks on
+  mechanism coherence before any PubMed round-trip.
+- *"10 apples a day"* — F1 fires as a **warning**, pipeline still
+  proceeds but the results page surfaces the warning banner.
+
+The station lives in isolation: it's stateless between calls,
+doesn't touch extraction output beyond reading the flat PICO, and
+doesn't replace elicitation — it only gates whether elicitation
+runs at all.
+
+---
+
 ## File inventory (current)
 
 Source:
@@ -426,6 +567,13 @@ Source:
 - [src/elicitation/elicitor.py](../src/elicitation/elicitor.py) (static)
 - [src/elicitation/adaptive_elicitor.py](../src/elicitation/adaptive_elicitor.py) (NEW — literature-informed)
 - [src/extraction/](../src/extraction/) (unchanged)
+- [src/plausibility/__init__.py](../src/plausibility/__init__.py) (NEW — Station 1.5)
+- [src/plausibility/schemas.py](../src/plausibility/schemas.py)
+- [src/plausibility/reference_table.py](../src/plausibility/reference_table.py)
+- [src/plausibility/dose_checker.py](../src/plausibility/dose_checker.py)
+- [src/plausibility/mechanism_checker.py](../src/plausibility/mechanism_checker.py)
+- [src/plausibility/plausibility_agent.py](../src/plausibility/plausibility_agent.py)
+- [data/plausibility_reference.yaml](../data/plausibility_reference.yaml)
 - [src/retrieval/__init__.py](../src/retrieval/__init__.py)
 - [src/retrieval/agent_llm.py](../src/retrieval/agent_llm.py)
 - [src/retrieval/agent_state.py](../src/retrieval/agent_state.py)
@@ -442,12 +590,13 @@ Source:
 - [src/synthesis/__init__.py](../src/synthesis/__init__.py)
 - [src/synthesis/paper_scorer.py](../src/synthesis/paper_scorer.py)
 - [src/synthesis/schemas.py](../src/synthesis/schemas.py)
-- [backend/main.py](../backend/main.py) (FastAPI: `/api/extract`, `/api/finalize`, `/api/synthesize`, `/api/health`)
+- [backend/main.py](../backend/main.py) (FastAPI: `/api/extract`, `/api/plausibility`, `/api/finalize`, `/api/synthesize`, `/api/health`)
 - [frontend/src/App.tsx](../frontend/src/App.tsx) + [frontend/src/api.ts](../frontend/src/api.ts)
 - [demo.py](../demo.py) (CLI driver)
 
 Logs (auto-generated, gitignored):
 - `logs/extraction.jsonl`, `logs/extraction_llm.jsonl`
 - `logs/elicitation.jsonl`
+- `logs/plausibility.jsonl`
 - `logs/retrieval.jsonl`
 - `logs/synthesis.jsonl`
