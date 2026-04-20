@@ -74,8 +74,8 @@ from src.schemas import LockedPICO
 
 # Station 2 population token → Station 4 DemographicGroup literal.
 _POPULATION_TO_DEMOGRAPHIC: dict[str, str] = {
-    "healthy_adults": "adults",
-    "healthy_replete": "adults",
+    "healthy adults": "adults",
+    "healthy replete": "adults",
     "children": "children",
     "infants": "infants",
     "adolescents": "adolescents",
@@ -85,10 +85,10 @@ _POPULATION_TO_DEMOGRAPHIC: dict[str, str] = {
     "diabetic": "adults",
     "hypercholesterolemia": "adults",
     "deficient": "adults",
-    "inflammatory_patients": "adults",
-    "cardiovascular_patients": "adults",
-    "liver_patients": "adults",
-    "lactose_intolerant": "general",
+    "inflammatory patients": "adults",
+    "cardiovascular patients": "adults",
+    "liver patients": "adults",
+    "lactose intolerant": "general",
     "condition": "general",
 }
 
@@ -464,7 +464,7 @@ def _age_to_population(age: int) -> str:
     if age < 18:
         return "adolescents"
     if age < 65:
-        return "healthy_adults"
+        return "healthy adults"
     return "older_adults"
 
 

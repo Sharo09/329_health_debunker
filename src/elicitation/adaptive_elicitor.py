@@ -76,7 +76,7 @@ class AdaptiveElicitationAgent:
     SUFFICIENT_HITS = 100       # top slice ≥ this → evidence is plentiful
     INSUFFICIENT_HITS = 5       # top slice < this → claim is genuinely understudied
 
-    DEFAULT_POPULATION = "healthy_adults"
+    DEFAULT_POPULATION = "healthy adults"
     DEFAULT_LOG_FILE = "logs/elicitation.jsonl"
 
     def __init__(
@@ -381,7 +381,7 @@ class AdaptiveElicitationAgent:
         """
         # Default candidates — light hand-curated set that maps to real MeSH.
         candidates = [
-            ("healthy_adults", "Adult"),
+            ("healthy adults", "Adult"),
             ("children", "Child"),
             ("elderly", "Aged"),
             ("pregnant", "Pregnancy"),

@@ -220,13 +220,13 @@ def assign_form_stratum(
 # ---------------------------------------------------------------------------
 
 _FREQUENCY_CANONICAL: dict[str, list[str]] = {
-    "multi_daily": ["multiple times per day", "multi daily", "several times a day", "twice daily", "3x daily"],
+    "multi daily": ["multiple times per day", "multi daily", "several times a day", "twice daily", "3x daily"],
     "daily": ["daily", "every day", "per day", "once a day", "once daily", "each day"],
     "weekly": ["weekly", "per week", "once a week", "each week"],
     "occasional": ["occasional", "occasionally", "sporadic", "rarely", "less than weekly", "rare"],
-    "time_restricted_16_8": ["16:8", "time-restricted", "time restricted eating"],
-    "five_two": ["5:2"],
-    "alternate_day": ["alternate day", "alternate-day", "every other day"],
+    "time restricted 16 8": ["16:8", "time-restricted", "time restricted eating"],
+    "five two": ["5:2"],
+    "alternate day": ["alternate day", "alternate-day", "every other day"],
     "extended": ["extended", "prolonged", "multi-day fast"],
 }
 

@@ -40,7 +40,7 @@ def test_live_orange_flu_retrieves_real_papers(tmp_path):
         food="orange",
         outcome="flu",
         component="vitamin C",           # Station 1 is expected to have inferred this
-        population="healthy_adults",
+        population="healthy adults",
         form="dietary",
     )
     result = agent.retrieve(pico)

@@ -358,7 +358,7 @@ def test_lock_falls_back_to_default_population(tmp_path):
         ambiguous_slots=["population"],
     )
     locked = agent.elicit(pico)
-    assert locked.population == "healthy_adults"
+    assert locked.population == "healthy adults"
     assert "population" in locked.fallbacks_used
 
 

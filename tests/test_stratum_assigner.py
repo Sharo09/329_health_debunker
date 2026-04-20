@@ -137,16 +137,16 @@ def test_assign_dose_zero_user_falls_back_to_unreported():
         ("capsule", "supplement"),
         ("tablet", "supplement"),
         ("d3 supplement", "supplement"),
-        ("d3_supplement", "supplement"),
+        ("d3 supplement", "supplement"),
         ("oral supplement", "supplement"),
         # extract
         ("extract", "extract"),
         ("standardized extract", "extract"),
         ("standardised extract", "extract"),
         ("concentrated extract", "extract"),
-        # "dietary_concentrated" is the turmeric-tea / golden-milk tier —
+        # "dietary concentrated" is the turmeric-tea / golden-milk tier —
         # still a dietary form, just denser than raw spice.
-        ("dietary_concentrated", "dietary"),
+        ("dietary concentrated", "dietary"),
         # isolated compound
         ("isolated", "isolated_compound"),
         ("pure compound", "isolated_compound"),
@@ -188,7 +188,7 @@ def test_canonical_form(raw, expected):
         # Food-specific tokens via fallback.
         ("processed", "processed", "matches"),
         ("processed", "unprocessed", "different"),
-        ("whole", "low_fat", "different"),
+        ("whole", "low fat", "different"),
         # Missing sides.
         (None, "dietary", "not_applicable"),
         ("dietary", None, "unreported"),
@@ -212,12 +212,12 @@ def test_assign_form(user, paper, expected):
         ("per day", "daily"),
         ("weekly", "weekly"),
         ("per week", "weekly"),
-        ("twice daily", "multi_daily"),
-        ("multiple times per day", "multi_daily"),
+        ("twice daily", "multi daily"),
+        ("multiple times per day", "multi daily"),
         ("occasional", "occasional"),
         ("rarely", "occasional"),
-        ("5:2", "five_two"),
-        ("alternate day", "alternate_day"),
+        ("5:2", "five two"),
+        ("alternate day", "alternate day"),
     ],
 )
 def test_canonical_frequency(raw, expected):

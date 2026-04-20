@@ -28,8 +28,8 @@ SYNTHESIS_PAPER_CAP = 40
 
 # Map Station 2's population tokens → Station 4's DemographicGroup literal.
 _POPULATION_TO_DEMOGRAPHIC: dict[str, str] = {
-    "healthy_adults": "adults",
-    "healthy_replete": "adults",
+    "healthy adults": "adults",
+    "healthy replete": "adults",
     "children": "children",
     "infants": "infants",
     "adolescents": "adolescents",
@@ -39,10 +39,10 @@ _POPULATION_TO_DEMOGRAPHIC: dict[str, str] = {
     "diabetic": "adults",
     "hypercholesterolemia": "adults",
     "deficient": "adults",
-    "inflammatory_patients": "adults",
-    "cardiovascular_patients": "adults",
-    "liver_patients": "adults",
-    "lactose_intolerant": "general",
+    "inflammatory patients": "adults",
+    "cardiovascular patients": "adults",
+    "liver patients": "adults",
+    "lactose intolerant": "general",
     "condition": "general",
 }
 

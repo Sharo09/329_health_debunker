@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class ElicitationAgent:
     MAX_QUESTIONS = 3
     DEFAULT_LOG_FILE = "logs/elicitation.jsonl"
-    DEFAULT_POPULATION = "healthy_adults"
+    DEFAULT_POPULATION = "healthy adults"
 
     def __init__(self, ui_adapter: UIAdapter, log_file: Optional[str] = None):
         self.ui = ui_adapter

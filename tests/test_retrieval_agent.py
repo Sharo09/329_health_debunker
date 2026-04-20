@@ -145,7 +145,7 @@ def test_agent_runs_direct_query_and_finishes(tmp_path):
         raw_claim="does orange prevent flu",
         food="orange",
         outcome="flu",
-        population="healthy_adults",
+        population="healthy adults",
     )
     result = agent.retrieve(pico)
 
@@ -198,7 +198,7 @@ def test_orange_flu_mechanism_query_finds_vitamin_c_literature(tmp_path):
         food="orange",
         outcome="flu",
         component="vitamin C",
-        population="healthy_adults",
+        population="healthy adults",
     )
     result = agent.retrieve(pico)
 

@@ -30,7 +30,7 @@ def test_turmeric_all_ambiguous_asks_form_outcome_population_in_order(tmp_path):
     adapter = MockUIAdapter([
         ("As a curcumin supplement (standardized extract pills)", "supplement"),
         ("Inflammation (general)", "inflammation"),
-        ("Healthy adults", "healthy_adults"),
+        ("Healthy adults", "healthy adults"),
     ])
     partial = PartialPICO(
         raw_claim="Is turmeric good?",
@@ -46,7 +46,7 @@ def test_turmeric_all_ambiguous_asks_form_outcome_population_in_order(tmp_path):
     ]
     assert locked.form == "supplement"
     assert locked.outcome == "inflammation"
-    assert locked.population == "healthy_adults"
+    assert locked.population == "healthy adults"
     assert locked.locked is True
     assert len(locked.conversation) == 3
     assert locked.fallbacks_used == []
@@ -58,7 +58,7 @@ def test_outcome_already_specified_is_not_re_asked(tmp_path):
     # turmeric priority: [form, outcome, population] -> skip outcome, ask form+population.
     adapter = MockUIAdapter([
         ("As a curcumin supplement (standardized extract pills)", "supplement"),
-        ("Healthy adults", "healthy_adults"),
+        ("Healthy adults", "healthy adults"),
     ])
     partial = PartialPICO(
         raw_claim="Is turmeric good for inflammation?",
@@ -79,7 +79,7 @@ def test_slot_not_in_ambiguous_is_skipped_even_when_none(tmp_path):
     # form is None but NOT in ambiguous_slots -> skip; go to outcome+population.
     adapter = MockUIAdapter([
         ("Inflammation (general)", "inflammation"),
-        ("Healthy adults", "healthy_adults"),
+        ("Healthy adults", "healthy adults"),
     ])
     partial = PartialPICO(
         raw_claim="Is turmeric good?",
@@ -94,8 +94,8 @@ def test_slot_not_in_ambiguous_is_skipped_even_when_none(tmp_path):
 
 def test_at_most_three_questions_when_all_slots_ambiguous(tmp_path):
     adapter = MockUIAdapter([
-        ("Heart disease or blood pressure", "cardiovascular_disease"),
-        ("Healthy adults", "healthy_adults"),
+        ("Heart disease or blood pressure", "cardiovascular disease"),
+        ("Healthy adults", "healthy adults"),
         ("1-2 cups", "moderate"),
     ])
     partial = PartialPICO(
@@ -105,8 +105,8 @@ def test_at_most_three_questions_when_all_slots_ambiguous(tmp_path):
     )
     locked = _agent(adapter, tmp_path).elicit(partial)
     assert len(adapter.asked_questions) == 3
-    assert locked.outcome == "cardiovascular_disease"
-    assert locked.population == "healthy_adults"
+    assert locked.outcome == "cardiovascular disease"
+    assert locked.population == "healthy adults"
     assert locked.dose == "moderate"
 
 
@@ -179,8 +179,8 @@ def test_empty_food_string_raises_unscopable_claim_error(tmp_path):
 def test_unknown_food_uses_default_priority(tmp_path):
     # DEFAULT_PRIORITY = ["outcome", "population", "form"]
     adapter = MockUIAdapter([
-        ("Heart disease", "cardiovascular_disease"),
-        ("Healthy adults", "healthy_adults"),
+        ("Heart disease", "cardiovascular disease"),
+        ("Healthy adults", "healthy adults"),
         ("As ordinary food", "dietary"),
     ])
     partial = PartialPICO(
@@ -193,8 +193,8 @@ def test_unknown_food_uses_default_priority(tmp_path):
     # Default priority first three were asked, in order.
     assert len(adapter.asked_questions) == 3
     assert DEFAULT_PRIORITY == ["outcome", "population", "form"]
-    assert locked.outcome == "cardiovascular_disease"
-    assert locked.population == "healthy_adults"
+    assert locked.outcome == "cardiovascular disease"
+    assert locked.population == "healthy adults"
     assert locked.form == "dietary"
 
 
@@ -212,7 +212,7 @@ def test_population_defaults_when_never_asked(tmp_path):
     )
     locked = _agent(adapter, tmp_path).elicit(partial)
 
-    assert locked.population == "healthy_adults"
+    assert locked.population == "healthy adults"
     assert "population" in locked.fallbacks_used
 
 
@@ -236,7 +236,7 @@ def test_outcome_unknown_from_fallback_does_not_raise(tmp_path):
     partial = PartialPICO(
         raw_claim="Is coffee bad?",
         food="coffee",
-        population="healthy_adults",
+        population="healthy adults",
         ambiguous_slots=["outcome"],
     )
     locked = _agent(adapter, tmp_path).elicit(partial)
@@ -250,7 +250,7 @@ def test_jsonl_log_written_with_expected_fields(tmp_path):
     log_path = tmp_path / "elicit.jsonl"
     adapter = MockUIAdapter([
         ("As a curcumin supplement (standardized extract pills)", "supplement"),
-        ("Healthy adults", "healthy_adults"),
+        ("Healthy adults", "healthy adults"),
     ])
     partial = PartialPICO(
         raw_claim="Is turmeric good for inflammation?",
@@ -281,7 +281,7 @@ def test_jsonl_log_written_with_expected_fields(tmp_path):
     assert len(rec["conversation"]) == 2
     assert rec["locked_pico"]["form"] == "supplement"
     assert rec["locked_pico"]["outcome"] == "inflammation"
-    assert rec["locked_pico"]["population"] == "healthy_adults"
+    assert rec["locked_pico"]["population"] == "healthy adults"
     assert rec["locked_pico"]["locked"] is True
     # Input PICO snapshot preserves the original (pre-locking) form=None.
     assert rec["input_partial_pico"]["form"] is None
@@ -292,8 +292,8 @@ def test_multiple_elicitations_append_to_log(tmp_path):
     partial = PartialPICO(
         raw_claim="x",
         food="coffee",
-        population="healthy_adults",
-        outcome="cardiovascular_disease",
+        population="healthy adults",
+        outcome="cardiovascular disease",
         ambiguous_slots=[],
     )
     for _ in range(3):
@@ -305,8 +305,8 @@ def test_multiple_elicitations_append_to_log(tmp_path):
 
 def test_compound_food_picks_first_and_logs_warning(tmp_path):
     adapter = MockUIAdapter([
-        ("Heart disease or blood pressure", "cardiovascular_disease"),
-        ("Healthy adults", "healthy_adults"),
+        ("Heart disease or blood pressure", "cardiovascular disease"),
+        ("Healthy adults", "healthy adults"),
         ("1-2 cups", "moderate"),
     ])
     partial = PartialPICO(
@@ -329,7 +329,7 @@ def test_other_free_text_stored_and_logged(tmp_path):
     partial = PartialPICO(
         raw_claim="weird claim",
         food="coffee",
-        population="healthy_adults",
+        population="healthy adults",
         ambiguous_slots=["outcome"],
     )
     log_path = tmp_path / "elicit.jsonl"
