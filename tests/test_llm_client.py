@@ -191,7 +191,7 @@ def test_provider_exception_surfaces_as_extraction_error(tmp_path):
 
 def test_default_model_and_temperature():
     client = LLMClient(provider=_scripted_provider([]))
-    assert client.model == "gemini-2.5-pro"
+    assert client.model == "gemini-3.1-pro-preview"
     assert client.temperature == 0.0
 
 

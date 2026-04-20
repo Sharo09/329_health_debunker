@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_MODEL = "gemini-3-flash-preview"
 
 
 # ---------------------------------------------------------------------------
@@ -29,6 +29,12 @@ DEFAULT_MODEL = "gemini-3.1-pro-preview"
 class ToolCall:
     name: str
     args: dict
+    # Gemini 3.x with thinking enabled attaches a ``thought_signature``
+    # to each function_call part. When the same call is replayed in the
+    # next turn (to pair it with the tool result), the signature must
+    # be preserved or the API rejects the request with 400 INVALID_ARGUMENT.
+    # Stays ``None`` on models that don't emit signatures (e.g. flash).
+    thought_signature: bytes | None = None
 
 
 @dataclass
@@ -135,7 +141,8 @@ class GeminiAgentLLM(AgentLLM):
             fc = getattr(part, "function_call", None)
             if fc:
                 args = dict(getattr(fc, "args", None) or {})
-                return ToolCall(name=fc.name, args=args)
+                sig = getattr(part, "thought_signature", None)
+                return ToolCall(name=fc.name, args=args, thought_signature=sig)
             txt = getattr(part, "text", None)
             if txt:
                 text_parts.append(txt)
@@ -165,13 +172,18 @@ def _messages_to_contents(messages: list[dict]) -> list[Any]:
                 parts.append(gtypes.Part(text=p["text"]))
             elif "function_call" in p:
                 fc = p["function_call"]
-                parts.append(
-                    gtypes.Part(
-                        function_call=gtypes.FunctionCall(
-                            name=fc["name"], args=fc["args"]
-                        )
+                kwargs = {
+                    "function_call": gtypes.FunctionCall(
+                        name=fc["name"], args=fc["args"]
                     )
-                )
+                }
+                sig = p.get("thought_signature")
+                if sig is not None:
+                    # Required for Gemini 3.x when thinking is on — the
+                    # signature attests that the tool call follows a
+                    # valid reasoning chain from the prior turn.
+                    kwargs["thought_signature"] = sig
+                parts.append(gtypes.Part(**kwargs))
             elif "function_response" in p:
                 fr = p["function_response"]
                 parts.append(

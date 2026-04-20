@@ -35,12 +35,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_LOG_FILE = "logs/plausibility.jsonl"
 
 # Plausibility is latency-critical: it sits on the synchronous path
-# between the user submitting a claim and seeing questions. We default
-# to flash + no-thinking here because the mechanism prompt is already
-# hand-tuned with eight few-shots and the dose parser is a mechanical
-# structural task — neither benefits meaningfully from pro-tier thinking.
-_DEFAULT_MODEL = "gemini-3.1-pro-preview"
-_DEFAULT_THINKING_BUDGET = 0
+# between the user submitting a claim and seeing questions. The
+# mechanism prompt has eight calibrated few-shots and the dose parser
+# is a mechanical JSON extraction, so we run this on Flash rather
+# than Pro. Keeps the gate under ~3 s instead of ~15 s.
+_DEFAULT_MODEL = "gemini-3-flash-preview"
+_DEFAULT_THINKING_BUDGET: int | None = None
 
 
 class PlausibilityAgent:

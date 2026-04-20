@@ -45,7 +45,7 @@ from src.schemas import PartialPICO
 logger = logging.getLogger(__name__)
 
 DEFAULT_LOG_FILE = "logs/retrieval.jsonl"
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_MODEL = "gemini-3-flash-preview"
 
 
 _SYSTEM_PROMPT = """\
@@ -238,18 +238,20 @@ class RetrievalAgent:
 
             # Append a model turn (the tool call) and a user turn (the response)
             # so the next LLM call sees the full trace.
-            messages.append(
-                {
-                    "role": "model",
-                    "parts": [
-                        {
-                            "function_call": {
-                                "name": action.name,
-                                "args": action.args,
-                            }
-                        }
-                    ],
+            # Preserve Gemini 3.x ``thought_signature`` so the API can
+            # validate the reasoning chain on the next turn. Older models
+            # (flash, 2.5-pro without thinking) leave this None and the
+            # part-builder skips attaching the attribute.
+            fc_part: dict = {
+                "function_call": {
+                    "name": action.name,
+                    "args": action.args,
                 }
+            }
+            if action.thought_signature is not None:
+                fc_part["thought_signature"] = action.thought_signature
+            messages.append(
+                {"role": "model", "parts": [fc_part]}
             )
             messages.append(
                 {

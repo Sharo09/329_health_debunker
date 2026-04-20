@@ -75,7 +75,14 @@ from src.synthesis.stratifier import extract_values_in_parallel
 # Config
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+# Split between a fast model for high-volume mechanical calls (score
+# papers, stratifier extractor) and a pro model for the one reasoning
+# pass that matters most (final verdict synthesis).
+FAST_MODEL = "gemini-3-flash-preview"
+VERDICT_MODEL = "gemini-3.1-pro-preview"
+
+# Back-compat alias — some older call sites still import this.
+DEFAULT_MODEL = FAST_MODEL
 
 # Cached Client: creating a new genai.Client per call can leave earlier
 # instances (e.g., Station 1's extraction client) in a closed state,
@@ -215,8 +222,12 @@ def _build_scoring_message(request: ScoreRequest) -> str:
     return "\n".join(lines)
 
 
-def score_papers(request: ScoreRequest, model: str = DEFAULT_MODEL) -> ScoreResponse:
-    """Score each paper for topical relevance."""
+def score_papers(request: ScoreRequest, model: str = FAST_MODEL) -> ScoreResponse:
+    """Score each paper for topical relevance.
+
+    ``thinking_budget`` is left to the model's default — ``gemini-3.1-pro``
+    requires thinking mode and rejects ``budget=0``.
+    """
     response = _client().models.generate_content(
         model=model,
         contents=_build_scoring_message(request),
@@ -225,8 +236,6 @@ def score_papers(request: ScoreRequest, model: str = DEFAULT_MODEL) -> ScoreResp
             response_mime_type="application/json",
             response_schema=ScoreList,
             system_instruction=_SCORING_SYSTEM_PROMPT,
-            # Structured scoring against a clear rubric — no thinking pass needed.
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
     parsed = ScoreList.model_validate_json(response.text)
@@ -400,7 +409,7 @@ def generate_verdict(
     user_profile: UserProfile,
     scored: list[PaperScoreResult],
     papers_by_id: dict[str, Paper],
-    model: str = DEFAULT_MODEL,
+    model: str = VERDICT_MODEL,
     enable_thinking: bool = True,
     stratifications: list[PaperStratification] | None = None,
     generalisation_warnings: list[str] | None = None,
@@ -425,8 +434,11 @@ def generate_verdict(
         response_schema=_VerdictResultLLM,
         system_instruction=_VERDICT_SYSTEM_PROMPT,
     )
-    if not enable_thinking:
-        config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+    # ``enable_thinking=False`` used to set ``thinking_budget=0`` for a
+    # ~30% speedup on flash. gemini-3.1-pro-preview rejects budget=0, so
+    # we now leave the flag as a no-op — the model's default thinking
+    # mode is used. Kept in the signature for caller back-compat.
+    del enable_thinking
 
     response = _client().models.generate_content(
         model=model,
@@ -450,10 +462,11 @@ def generate_verdict(
 
 def analyze_claim(
     request: ScoreRequest,
-    model: str = DEFAULT_MODEL,
+    model: str = FAST_MODEL,
     log_file: str | None = None,
     locked_pico=None,
     extractor_llm=None,
+    verdict_model: str = VERDICT_MODEL,
 ) -> AnalysisResponse:
     """Full pipeline: score → stratify → synthesize.
 
@@ -480,11 +493,14 @@ def analyze_claim(
 
     if locked_pico is not None:
         from src.extraction.llm_client import LLMClient as _LLMClient
-        llm = extractor_llm or _LLMClient(
-            model=model, thinking_budget=0
-        )
+        # Use the model's default thinking budget. gemini-3.1-pro-preview
+        # rejects ``budget=0`` with 400 INVALID_ARGUMENT.
+        llm = extractor_llm or _LLMClient(model=model)
+        # No user-side rate limit — fan every paper out at once. The
+        # helper clamps ``max_workers`` down to ``len(papers)`` if the
+        # batch is smaller.
         extracted_values = extract_values_in_parallel(
-            request.papers, llm, max_workers=4
+            request.papers, llm, max_workers=50
         )
         stratifications = build_paper_stratifications(
             extracted_values, locked_pico
@@ -508,7 +524,7 @@ def analyze_claim(
         user_profile=request.user_profile,
         scored=scored_response.results,
         papers_by_id=papers_by_id,
-        model=model,
+        model=verdict_model,
         stratifications=stratifications or None,
         generalisation_warnings=warnings or None,
         locked_pico=locked_pico,
